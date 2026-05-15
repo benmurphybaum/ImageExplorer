@@ -91,7 +91,7 @@ static strconstant ksShortTitle="Image Explorer" // the project short title on I
 //	Meta-data about the scan configuration and parameters is saved as a ScanInfo string in the destination folder.
 
 
-StrConstant IE = "root:Packages:NeuroToolsPlus:ScanImage"
+StrConstant IE = "root:Packages:ImageExplorer"
 StrConstant IE_LIGHT_FONT = "Calibri Light"
 
 Menu "Analysis"
@@ -1278,18 +1278,13 @@ Function IE_CreatePackage()
 		NewDataFolder root:Packages
 	EndIf
 	
-	If(!DataFolderExists("root:Packages:NeuroTools"))
-		NewDataFolder root:Packages:NeuroToolsPlus
-	EndIf
-	
-	//Make the ScanImage package folder
-	If(!DataFolderExists("root:Packages:NeuroToolsPlus:ScanImage"))
-		NewDataFolder root:Packages:NeuroToolsPlus:ScanImage
+	If(!DataFolderExists("root:Packages:ImageExplorer"))
+		NewDataFolder root:Packages:ImageExplorer
 	EndIf
 	
 	//Make the ScanImage ROI folder
-	If(!DataFolderExists("root:Packages:NeuroToolsPlus:ScanImage:ROIs"))
-		NewDataFolder root:Packages:NeuroToolsPlus:ScanImage:ROIs
+	If(!DataFolderExists("root:Packages:ImageExplorer:ROIs"))
+		NewDataFolder root:Packages:ImageExplorer:ROIs
 	EndIf
 	
 	DFREF NTSI = $IE
@@ -1445,18 +1440,18 @@ Function IE_CreatePackage()
 	color[1,*][2] = 65535
 	color[1,*][3] = 16384
 	
-	If(!DataFolderExists("root:Packages:NeuroToolsPlus:CustomColors"))
-		NewDataFolder root:Packages:NeuroToolsPlus:CustomColors
+	If(!DataFolderExists("root:Packages:ImageExplorer:CustomColors"))
+		NewDataFolder root:Packages:ImageExplorer:CustomColors
 	EndIf
 
 	String whichColor = "Geo" //more pleasant color contrast than Rainbow or Spectrum
-	Wave/Z colorTab = root:Packages:NeuroToolsPlus:CustomColors:$whichColor
+	Wave/Z colorTab = root:Packages:ImageExplorer:CustomColors:$whichColor
 	If(!WaveExists(colorTab))
-		SetDataFolder root:Packages:NeuroToolsPlus:CustomColors
+		SetDataFolder root:Packages:ImageExplorer:CustomColors
 		ColorTab2Wave $whichColor
-		Duplicate/O root:Packages:NeuroToolsPlus:CustomColors:M_colors,root:Packages:NeuroToolsPlus:CustomColors:$whichColor
-		Wave colorTab = root:Packages:NeuroToolsPlus:CustomColors:$whichColor
-		KillWaves/Z root:Packages:NeuroToolsPlus:CustomColors:M_colors
+		Duplicate/O root:Packages:ImageExplorer:CustomColors:M_colors, root:Packages:ImageExplorer:CustomColors:$whichColor
+		Wave colorTab = root:Packages:ImageExplorer:CustomColors:$whichColor
+		KillWaves/Z root:Packages:ImageExplorer:CustomColors:M_colors
 	EndIf
 
 	//Records double click events
@@ -1533,11 +1528,11 @@ Function IE_CreatePackage()
 	scanFieldMatchStr = ""
 	
 	//Scan Registration variables, etc.
-	If(!DataFolderExists("root:Packages:NeuroToolsPlus:ScanImage:Registration"))
-		NewDataFolder root:Packages:NeuroToolsPlus:ScanImage:Registration
+	If(!DataFolderExists("root:Packages:ImageExplorer:Registration"))
+		NewDataFolder root:Packages:ImageExplorer:Registration
 	EndIf
 	
-	DFREF NTSR = root:Packages:NeuroToolsPlus:ScanImage:Registration
+	DFREF NTSR = root:Packages:ImageExplorer:Registration
 	String/G NTSR:roiXlist
 	String/G NTSR:roiYlist
 	Variable/G NTSR:hidden
@@ -1942,7 +1937,7 @@ End
 Function IE_ZoomScrollHook(s)
 	STRUCT WMWinHookStruct &s
 	DFREF NTSI = $IE
-	DFREF NTSR = root:Packages:NeuroToolsPlus:ScanImage:ROIs
+	DFREF NTSR = root:Packages:ImageExplorer:ROIs
 	NVAR scaleCumulative = NTSI:scaleCumulative
 	NVAR ROI_Engaged = NTSI:ROI_Engaged
 	NVAR Nudge_Engaged = NTSI:Nudge_Engaged	
@@ -2726,7 +2721,7 @@ Function/WAVE IE_ClickedROI(mx,my,graphRef)
 	Variable mx,my
 	String graphRef
 	
-	DFREF NTSI = root:Packages:NeuroToolsPlus:ScanImage
+	DFREF NTSI = $IE
 	Make/O/WAVE/N=2 NTSI:clickedROIRef/Wave=clickedROIRef
 	
 	String info = TraceFromPixel(mx,my,"WINDOW:" + graphRef + ";DELTAX:4;DELTAY:4")
@@ -2742,7 +2737,7 @@ End
 
 //Finds all of the existing ROI groups and returns a listwave of them
 Function/Wave IE_GetROIGroups()
-	DFREF NTR = root:Packages:NeuroToolsPlus:ScanImage:ROIs
+	DFREF NTR = $(IE + ":ROIs")
 
 	String groups = ""	
 	
@@ -2778,7 +2773,7 @@ Function/Wave IE_GetROIs(group)
 	
 	DFREF saveDF = GetDataFolderDFR()
 	
-	String roiFolder = "root:Packages:NeuroToolsPlus:ScanImage:ROIs:"
+	String roiFolder = "root:Packages:ImageExplorer:ROIs:"
 		
 	//No group, return empty
 	If(!strlen(group))
@@ -2955,7 +2950,7 @@ static Function/S textWaveToStringList(textWave,separator,[col,layer,noEnding])
 End
 
 Function IE_StopFramePlay()
-	NVAR isPlaying = root:Packages:NeuroToolsPlus:ScanImage:isPlaying
+	NVAR isPlaying = root:Packages:ImageExplorer:isPlaying
 	CtrlNamedBackground play, stop
 	isPlaying = 0
 	
@@ -2993,7 +2988,7 @@ End
 
 //Steps a single frame of the image stacks
 Function IE_StepFrame()
-	DFREF NTSI = root:Packages:NeuroToolsPlus:ScanImage
+	DFREF NTSI = $IE
 	NVAR plane = NTSI:imagePlane
 	NVAR numImages = NTSI:numImages
 	
@@ -3080,7 +3075,7 @@ Function IE_RemoveFromSIDisplay(w)
 		return 0
 	EndIf
 	
-	DFREF NTSI = root:Packages:NeuroToolsPlus:ScanImage
+	DFREF NTSI = root:Packages:ImageExplorer
 	NVAR numImages = NTSI:numImages
 	numImages = IE_GetNumImages("SIDisplay","image")
 	
@@ -3269,7 +3264,7 @@ Constant ROIPanelHeight = 300
 Function IE_ButtonProc(ba) : ButtonControl
 	STRUCT WMButtonAction &ba
 	
-	DFREF NTSI = root:Packages:NeuroToolsPlus:ScanImage
+	DFREF NTSI = root:Packages:ImageExplorer
 	NVAR ROI_Width = NTSI:ROI_Width
 	NVAR ROI_Height = NTSI:ROI_Height
 	NVAR ROI_PctThreshold = NTSI:ROI_PctThreshold
@@ -3401,7 +3396,7 @@ Function IE_ButtonProc(ba) : ButtonControl
 					GroupList = TextWaveToStringList(ROIGroupListWave,";")
 					
 					strWidth = FontSizeStringWidth(IE_LIGHT_FONT, 12, 0, "Group")
-					PopUpMenu roiGroupSelect,win=IEDisplay#ROIPanel,pos={2,55},bodywidth=ROIPanelWidth-strWidth - 6,title="Group",font=$IE_LIGHT_FONT,value=#"root:Packages:NeuroToolsPlus:ScanImage:GroupList",proc=IE_PopProc
+					PopUpMenu roiGroupSelect,win=IEDisplay#ROIPanel,pos={2,55},bodywidth=ROIPanelWidth-strWidth - 6,title="Group",font=$IE_LIGHT_FONT,value=#"root:Packages:ImageExplorer:GroupList",proc=IE_PopProc
 					Button addGroup win=IEDisplay#ROIPanel,pos={9,80},size={ROIPanelWidth - 4,20},font=$IE_LIGHT_FONT,title="Add Group",proc=IE_ButtonProc
 					SetVariable pctFillThreshold,win=IEDisplay#ROIPanel,pos={47,35},size={60,20},bodywidth=30,title="%",value=ROI_PctThreshold,disable=1
 					Button nudgeROI win=IEDisplay#ROIPanel,pos={9,77},size={93,20},font=$IE_LIGHT_FONT,valueColor=(0,0x9999,0),title="Nudge ROIs",disable=0,proc=IE_ButtonProc
@@ -3429,11 +3424,11 @@ Function IE_ButtonProc(ba) : ButtonControl
 					EndIf
 					
 					//Create the ROI group folder
-					If(!DataFolderExists("root:Packages:NeuroToolsPlus:ScanImage:ROIs"))
-						NewDataFolder root:Packages:NeuroToolsPlus:ScanImage:ROIs
+					If(!DataFolderExists("root:Packages:ImageExplorer:ROIs"))
+						NewDataFolder root:Packages:ImageExplorer:ROIs
 					EndIf
 					
-					String roiFolder = "root:Packages:NeuroToolsPlus:ScanImage:ROIs:"
+					String roiFolder = "root:Packages:ImageExplorer:ROIs:"
 					
 					If(DataFolderExists(roiFolder + newGroupName))
 						DoAlert 0, "A group named '" + newGroupName + "' already exists."
@@ -3716,7 +3711,7 @@ Function IE_ButtonProc(ba) : ButtonControl
 					IE_StopFramePlay()
 					
 					//Get max projection of every image in the SIDisplay
-					SVAR SIDisplay_ImagePaths = root:Packages:NeuroToolsPlus:ScanImage:SIDisplay_ImagePaths
+					SVAR SIDisplay_ImagePaths = root:Packages:ImageExplorer:SIDisplay_ImagePaths
 					
 					IE_GetMaxProj(SIDisplay_ImagePaths)
 					
@@ -3935,8 +3930,8 @@ Function IE_ListBoxProc(lba) : ListBoxControl
 	WAVE/Z selWave = lba.selWave
 	Variable errorCode = 0
 	
-	DFREF NTSI = root:Packages:NeuroToolsPlus:ScanImage
-	DFREF SIR = root:Packages:NeuroToolsPlus:ScanImage:ROIs //ROI folder
+	DFREF NTSI = root:Packages:ImageExplorer
+	DFREF SIR = root:Packages:ImageExplorer:ROIs //ROI folder
 	
 	//list and selection waves for the ScanImage list boxes
 	Wave/T ScanFolderListWave = NTSI:ScanFolderListWave
@@ -4033,7 +4028,7 @@ Function IE_ListBoxProc(lba) : ListBoxControl
 									String roiGroup = ROIGroupListWave[row][0][1]
 									ModifyBrowser collapseAll//close all folders first
 									CreateBrowser //activates the data browser focus									
-									ModifyBrowser setDataFolder="root:Packages:NeuroToolsPlus:ScanImage:ROIs:" + roiGroup
+									ModifyBrowser setDataFolder="root:Packages:ImageExplorer:ROIs:" + roiGroup
 									break
 								case "Get Center":
 									//find the center of mass coordinates of each ROI in the group and put it in a wave
@@ -4046,7 +4041,7 @@ Function IE_ListBoxProc(lba) : ListBoxControl
 										roiGroup = ROIGroupListWave[row]
 										Wave/T ROIListWave = IE_GetROIs(roiGroup)
 										
-										String ROIFolder = "root:Packages:NeuroToolsPlus:ScanImage:ROIs:" + roiGroup + ":"
+										String ROIFolder = "root:Packages:ImageExplorer:ROIs:" + roiGroup + ":"
 										
 										If(DimSize(ROIListWave,0) > 0)										
 											ROIListWave = ROIFolder + ROIListWave[p]
@@ -4130,7 +4125,7 @@ Function IE_ListBoxProc(lba) : ListBoxControl
 						
 						//If there is no ROI mask, create one
 						For(i=0;i<ItemsInList(roiList,";");i+=1)
-							DFREF ROIGroupFolder = $("root:Packages:NeuroToolsPlus:ScanImage:ROIs:" + StringFromList(i,groupList,";"))
+							DFREF ROIGroupFolder = $("root:Packages:ImageExplorer:ROIs:" + StringFromList(i,groupList,";"))
 							ROIFolder = StringFromList(i,groupList,";")
 							
 							String ROIName = StringFromList(i,roiList,";")
@@ -4239,7 +4234,7 @@ Function IE_ListBoxProc(lba) : ListBoxControl
 									If(ROIGroupSelWave[i] > 0)
 										roiGroup = ROIGroupListWave[i]
 										
-										ROIFolder = "root:Packages:NeuroToolsPlus:ScanImage:ROIs:" + roiGroup + ":"
+										ROIFolder = "root:Packages:ImageExplorer:ROIs:" + roiGroup + ":"
 										
 										//All the ROIs in the selected ROI group
 										Wave/T ROIListWave = IE_GetROIs(roiGroup)
@@ -4336,7 +4331,7 @@ Function IE_ListBoxProc(lba) : ListBoxControl
 							
 					ROIGroupSelWave[row] = 1
 									
-					RenameDataFolder root:Packages:NeuroToolsPlus:ScanImage:ROIs:$oldROIGroupName,$ROIGroupListWave[row]
+					RenameDataFolder root:Packages:ImageExplorer:ROIs:$oldROIGroupName,$ROIGroupListWave[row]
 					
 					If(DataFolderExists("root:Analysis:'" + oldROIGroupName + "'"))
 						RenameDataFolder root:Analysis:$oldROIGroupName,$ROIGroupListWave[row]
@@ -4354,7 +4349,7 @@ Function IE_ListBoxProc(lba) : ListBoxControl
 					
 					roiGroup = ROIListWave[row][0][1]
 					
-					DFREF NTR = root:Packages:NeuroToolsPlus:ScanImage:ROIs:$roiGroup					
+					DFREF NTR = root:Packages:ImageExplorer:ROIs:$roiGroup					
 					
 					Wave origROIx = NTR:$(oldROIGroupName + "_x")
 					Wave origROIy = NTR:$(oldROIGroupName + "_y")
@@ -4385,8 +4380,8 @@ Function/S IE_SelectedROIs([groups])
 	groups = (ParamIsDefault(groups)) ? 0 : 1
 	
 	String roiList = ""
-	Wave selWave = root:Packages:NeuroToolsPlus:ScanImage:ROISelWave
-	Wave/T listWave = root:Packages:NeuroToolsPlus:ScanImage:ROIListWave
+	Wave selWave = root:Packages:ImageExplorer:ROISelWave
+	Wave/T listWave = root:Packages:ImageExplorer:ROIListWave
 	
 	Variable i
 	For(i=0;i<DimSize(selWave,0);i+=1)
@@ -4403,7 +4398,7 @@ End
 
 //Returns the currently selected scan folder
 Function/S IE_SelectedScanFolder()
-	Wave/T listWave = root:Packages:NeuroToolsPlus:ScanImage:ScanFolderListWave
+	Wave/T listWave = root:Packages:ImageExplorer:ScanFolderListWave
 	ControlInfo/W=IE scanFolders
 	
 	If(DimSize(listWave,0) == 0)
@@ -4419,8 +4414,8 @@ End
 
 //Returns the currently selected scan groups
 Function/S IE_SelectedScanGroups()
-	Wave/T listWave = root:Packages:NeuroToolsPlus:ScanImage:ScanGroupListWave
-	Wave selWave = root:Packages:NeuroToolsPlus:ScanImage:ScanGroupSelWave
+	Wave/T listWave = root:Packages:ImageExplorer:ScanGroupListWave
+	Wave selWave = root:Packages:ImageExplorer:ScanGroupSelWave
 	
 	Variable i
 	String groups = ""
@@ -4437,8 +4432,8 @@ End
 //returns names of the selected ROI Group in the Image Browser
 Function/S IE_SelectedROIGroup()
 	String groupList = ""
-	Wave selWave = root:Packages:NeuroToolsPlus:ScanImage:ROIGroupSelWave
-	Wave/T listWave = root:Packages:NeuroToolsPlus:ScanImage:ROIGroupListWave
+	Wave selWave = root:Packages:ImageExplorer:ROIGroupSelWave
+	Wave/T listWave = root:Packages:ImageExplorer:ROIGroupListWave
 	
 	Variable i
 	For(i=0;i<DimSize(selWave,0);i+=1)
@@ -4460,8 +4455,8 @@ Function/S IE_SelectedScanFields([fullpath])
 		fullpath = 1
 	EndIf
 	
-	Wave/T listWave = root:Packages:NeuroToolsPlus:ScanImage:ScanFieldListWave
-	Wave selWave = root:Packages:NeuroToolsPlus:ScanImage:ScanFieldSelWave
+	Wave/T listWave = root:Packages:ImageExplorer:ScanFieldListWave
+	Wave selWave = root:Packages:ImageExplorer:ScanFieldSelWave
 	
 	Variable i
 	String fields = ""
@@ -5232,7 +5227,7 @@ Function/WAVE IE_CreateROIMask(BaseImage,ROIFolder,ROIName,left,right,top,bottom
 	DFREF saveDF = GetDataFolderDFR()
 	
 	//ROI parent folder
-	DFREF SIR = root:Packages:NeuroTools:ScanImage:ROIs
+	DFREF SIR = $(IE + ":ROIs")
 	SetDataFolder SIR
 	
 	DFREF Folder = $ROIFolder
@@ -5312,7 +5307,7 @@ Function IE_AppendROIsToImage(groupList,roiList)
 	
 	//If groupList or roiList are empty strings, just removes all ROIs
 	
-	DFREF NTSI = root:Packages:NeuroToolsPlus:ScanImage
+	DFREF NTSI = root:Packages:ImageExplorer
 	NVAR numImages = NTSI:numImages
 		
 	String graphName = "IEDisplay"
@@ -5357,9 +5352,9 @@ Function IE_AppendROIsToImage(groupList,roiList)
 			String roiGroup = StringFromList(j,groupList,";")
 		
 
-			Wave roiX = $("root:Packages:NeuroToolsPlus:ScanImage:ROIs:" + roiGroup + ":" + roiName + "_x")
-			Wave roiY = $("root:Packages:NeuroToolsPlus:ScanImage:ROIs:" + roiGroup + ":" + roiName + "_y")
-			Wave/Z roiMask = $("root:Packages:NeuroToolsPlus:ScanImage:ROIs:" + roiGroup + ":" + roiName + "_Mask")
+			Wave roiX = $("root:Packages:ImageExplorer:ROIs:" + roiGroup + ":" + roiName + "_x")
+			Wave roiY = $("root:Packages:ImageExplorer:ROIs:" + roiGroup + ":" + roiName + "_y")
+			Wave/Z roiMask = $("root:Packages:ImageExplorer:ROIs:" + roiGroup + ":" + roiName + "_Mask")
 										
 			If(!WaveExists(roiX) || !WaveExists(roiY))
 				continue
@@ -5467,11 +5462,11 @@ Function/WAVE IE_CreateROI(left,top,right,bottom,[group,baseName,autoName])
 		group = ""
 	EndIf
 	
-	If(!DataFolderExists("root:Packages:NeuroToolsPlus:ScanImage:ROIs"))
-		NewDataFolder root:Packages:NeuroToolsPlus:ScanImage:ROIs
+	If(!DataFolderExists("root:Packages:ImageExplorer:ROIs"))
+		NewDataFolder root:Packages:ImageExplorer:ROIs
 	EndIf		
 	
-	String roiFolder = "root:Packages:NeuroToolsPlus:ScanImage:ROIs:"
+	String roiFolder = "root:Packages:ImageExplorer:ROIs:"
 	
 	DFREF saveDF = GetDataFolderDFR()
 	
@@ -5590,11 +5585,11 @@ Function IE_CreateDrawnROI(drawROIX,drawROIY,target,group,baseName)
 	Wave drawROIX,drawROIY
 	String target,group,baseName
 	
-	If(!DataFolderExists("root:Packages:NeuroToolsPlus:ScanImage:ROIs"))
-		NewDataFolder root:Packages:NeuroToolsPlus:ScanImage:ROIs
+	If(!DataFolderExists("root:Packages:ImageExplorer:ROIs"))
+		NewDataFolder root:Packages:ImageExplorer:ROIs
 	EndIf
 	
-	String roiFolder = "root:Packages:NeuroToolsPlus:ScanImage:ROIs:"
+	String roiFolder = "root:Packages:ImageExplorer:ROIs:"
 
 	
 	DFREF saveDF = GetDataFolderDFR()
@@ -5791,7 +5786,7 @@ Function IE_CreateROIGrid(w,h,threshold,target,group,baseName)
 		return 0
 	EndIf
 
-	String roiFolder = "root:Packages:NeuroToolsPlus:ScanImage:ROIs:"
+	String roiFolder = "root:Packages:ImageExplorer:ROIs:"
 	
 	//If no valid group, prompt user to create one
 	If(!strlen(group) || !DataFolderExists(roiFolder + group))
@@ -6025,7 +6020,7 @@ End
 Function IE_AutoStretch(pct)
 	Variable pct
 
-	DFREF NTSI = root:Packages:NeuroToolsPlus:ScanImage
+	DFREF NTSI = root:Packages:ImageExplorer
 	NVAR numImages = NTSI:numImages
 	NVAR imagePlane = NTSI:imagePlane
 	NVAR isMaxProj = NTSI:isMaxProj
@@ -6208,8 +6203,8 @@ Function/Wave IE_GetCenter([group])
 		return $""
 	EndIf
 	
-	DFREF NTR = root:Packages:NeuroToolsPlus:ScanImage:ROIs:
-	String path = "root:Packages:NeuroToolsPlus:ScanImage:ROIs:"
+	DFREF NTR = root:Packages:ImageExplorer:ROIs:
+	String path = "root:Packages:ImageExplorer:ROIs:"
 	
 	If(ParamIsDefault(group))
 		Make/O/N=(ItemsInList(roiList,";")) NTR:ROIx,NTR:ROIy
@@ -6252,8 +6247,8 @@ End
 
 //Start the background task for playing image frames
 Function IE_StartFramePlay()
-	NVAR isPlaying = root:Packages:NeuroToolsPlus:ScanImage:isPlaying
-	NVAR numTicks = root:Packages:NeuroToolsPlus:ScanImage:numTicks //refresh speed
+	NVAR isPlaying = root:Packages:ImageExplorer:isPlaying
+	NVAR numTicks = root:Packages:ImageExplorer:numTicks //refresh speed
 	
 	//Make sure to remove max projection images with actual images
 	DFREF NTSI = $IE
@@ -6382,8 +6377,8 @@ Function IE_HandleSelectionRightClick(selection,ROIListWave,ROISelWave)
 		Variable row = str2num(StringFromList(i,selectedRowList,";"))
 		
 		//Set the correct path to the ROI folder
-		DFREF NTR = root:Packages:NeuroToolsPlus:ScanImage:ROIs:$roiGroup
-		String baseROIPath = "root:Packages:NeuroToolsPlus:ScanImage:ROIs:"
+		DFREF NTR = root:Packages:ImageExplorer:ROIs:$roiGroup
+		String baseROIPath = "root:Packages:ImageExplorer:ROIs:"
 	
 		
 		//Handle the right click selection
@@ -6419,7 +6414,7 @@ Function IE_HandleSelectionRightClick(selection,ROIListWave,ROISelWave)
 				Wave roiX = NTR:$(roiName + "_x")
 				ModifyBrowser collapseAll//close all folders first
 				CreateBrowser //activates the data browser focus
-				ModifyBrowser setDataFolder="root:Packages:NeuroToolsPlus:ScanImage:ROIs:" + roiGroup		
+				ModifyBrowser setDataFolder="root:Packages:ImageExplorer:ROIs:" + roiGroup		
 				ModifyBrowser clearSelection,selectList=GetWavesDataFolder(roiX,2) //selects waves
 				break
 			default:
@@ -6552,7 +6547,7 @@ Function IE_ExtractROIs()
 				NewDataFolder $ROIFolder
 			EndIf
 			
-			DFREF RF = $"root:Packages:NeuroToolsPlus:ScanImage:ROIs:" + roiGroup
+			DFREF RF = $"root:Packages:ImageExplorer:ROIs:" + roiGroup
 			
 			Wave/Z roiX = RF:$(theROI + "_x")
 			Wave/Z roiY = RF:$(theROI + "_y")
