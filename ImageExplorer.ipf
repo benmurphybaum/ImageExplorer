@@ -2184,7 +2184,9 @@ Function IE_ZoomScrollHook(s)
 					MatrixOP/FREE meanLayers = sum(block)
 					MatrixOP/O dROI = transposeVol(meanLayers,3)
 					Redimension/S/N=(-1,0) dROI
-					dROI /= (DimSize(block,0) * DimSize(block,1))
+					
+					Variable numPixels = (DimSize(block,0) * DimSize(block,1))
+					dROI /= numPixels
 				
 					NVAR maxVal = NTSI:dynamicROI_MaxVal
 					NVAR minVal = NTSI:dynamicROI_MinVal
@@ -4671,10 +4673,14 @@ Function IE_DisplayScanField(imageList[,add])
 	
 	//Make the master panel or resize it if it exists already
 	GetWindow/Z IEDisplay wsize
-		
+	Variable alreadyOpen = V_flag == 0
+	
+	Variable originalLeft = (alreadyOpen) ? V_left : 0
+	Variable originalTop = (alreadyOpen) ? V_top : 0
+	
 	//Kill original panel
 	KillWindow/Z IEDisplay
-
+	
 
 	If(ParamIsDefault(add))
 		add = 0
@@ -4746,7 +4752,12 @@ Function IE_DisplayScanField(imageList[,add])
 	Variable leftOffset = V_right * r + 10
 	
 	//Make a new SI Display panel
-	NewPanel/K=1/W=(leftOffset,0,leftOffset + xSize,ySize)/N=IEDisplay as "Scanfield Display"	
+	if (alreadyOpen)
+		NewPanel/K=1/W=(originalLeft * r, originalTop * r, originalLeft*r + xSize, originalTop*r + ySize)/N=IEDisplay as "Scanfield Display"	
+	else
+		NewPanel/K=1/W=(leftOffset,0,leftOffset + xSize,ySize)/N=IEDisplay as "Scanfield Display"	
+	endif
+	
 	ModifyPanel/W=IEDisplay frameStyle=0
 	
 	//Make the image part of the panel
