@@ -3,7 +3,11 @@
 #pragma rtFunctionErrors=1
 
 static constant kProjectID=22059
-static strconstant ksShortTitle="Image Explorer for ScanImage" // the project short title on IgorExchange
+static strconstant ksShortTitle="Image Explorer" // the project short title on IgorExchange
+
+#if exists("JSONXOP_Parse")
+	#define JSONXOP
+#endif
 
 //*************************************************************************************************************************
 //************************************ SUMMARY ****************************************************************************
@@ -54,7 +58,7 @@ static strconstant ksShortTitle="Image Explorer for ScanImage" // the project sh
 //	  Square : Displays the current contents of the image viewer into a new image graph.
 
 //	ROIs:
-// Select New Group or any existing ROI group to put any newly created ROI in.
+// Select an ROI group from the dropdown, or click '+ Grp' to create a new group with a custom name.
 //  Marquee : Select an area of the image and click + to add the ROI.
 //    Click : Automatically creates an ROI of the defined size at the location of a mouse click. This is my preferred method by far.
 //     Draw : After clicking 'Start', click and drag around the image to create arbitrary ROI shapes.
@@ -99,28 +103,30 @@ Menu "Analysis"
 	End
 End
 
-Function/S IE_BrowseScanImage()	
-	//Opens a browser for the user to select .tif files to load
-	//Returns list of selected paths to the .tif files
-	
-	Variable refnum
-	String extension = ".tif"
-	
-	//Browse the folder
-	String message = "Select one or more ScanImage .tif files"
-	
-	String fileFilters = "ScanImage Files (*.tif,*.tiff):.tif,.tiff;"
-	fileFilters += "All Files:.*;"
-	
-	Open/D/R/F=fileFilters/MULT=1/M=message refnum
-	
-	//Convert to semi-colon separated list of files paths
-	S_filename = ReplaceString("\r",S_filename,";")
-	
-	//Loads the images as waves
-	IE_LoadScanImage(S_filename)
-	return S_filename 
-End
+#ifdef JSONXOP
+	Function/S IE_BrowseScanImage()	
+		//Opens a browser for the user to select .tif files to load
+		//Returns list of selected paths to the .tif files
+		
+		Variable refnum
+		String extension = ".tif"
+		
+		//Browse the folder
+		String message = "Select one or more ScanImage .tif files"
+		
+		String fileFilters = "ScanImage Files (*.tif,*.tiff):.tif,.tiff;"
+		fileFilters += "All Files:.*;"
+		
+		Open/D/R/F=fileFilters/MULT=1/M=message refnum
+		
+		//Convert to semi-colon separated list of files paths
+		S_filename = ReplaceString("\r",S_filename,";")
+		
+		//Loads the images as waves
+		IE_LoadScanImage(S_filename)
+		return S_filename 
+	End
+#endif
 
 Function/DF IE_CreateDestinationFolder(filePath)
 	String filePath
@@ -218,336 +224,338 @@ Function/WAVE IE_GetHeader(fileRef,length,offset)
 	return header
 End
 
-Function IE_LoadScanImage(fileList)
-	String fileList
-	//INPUT: string list of full paths to .tif files
-	//Business function. This actually loads the data from the .tif files, 
-	//and parses the data into individual waves depending on the scan configuration.
-
-	Variable fileRef
+#ifdef JSONXOP
+	Function IE_LoadScanImage(fileList)
+		String fileList
+		//INPUT: string list of full paths to .tif files
+		//Business function. This actually loads the data from the .tif files, 
+		//and parses the data into individual waves depending on the scan configuration.
 	
-	Variable j,numFiles = ItemsInList(fileList,";")
+		Variable fileRef
 		
-	String imageList = ""
-	
-	For(j=0;j<numFiles;j+=1)
-	
-		Variable ref = StartMSTimer	
-		
-		//the file path
-		String file = StringFromList(j,fileList,";")
-		DFREF destFolder = IE_CreateDestinationFolder(file)
-		
-		//Parse the full path into folder and file components
-		String fileName = ParseFilePath(0,file,":",1,0)
-		String folderPath = ParseFilePath(1,file,":",1,0)
-		
-		//Open the file
-		folderPath = RemoveEnding(folderPath,":") + ":" //ensures ending colon
-		NewPath/O/Q image,folderPath
-		
-		Open/P=image/R fileRef as file;
-	
+		Variable j,numFiles = ItemsInList(fileList,";")
 			
-		//Read binary data, little endian, 64 bit integer (8 byte)
-		String str = ""
-		Variable var
+		String imageList = ""
 		
-		Variable IFD_HEADER_OFFSET,MAGIC,VERSION,FRAME_DATA_LENGTH,ROI_DATA_LENGTH
-	
-		//IFD HEADER OFFSET
-		FSetPos fileRef,8
-		FBinRead/B=3/F=2 fileRef,IFD_HEADER_OFFSET
-
-		//STATIC METADATA
-		Variable pos = 16
+		For(j=0;j<numFiles;j+=1)
 		
-		//Magic # - confirms this is a scanimage big tiff file
-		FSetPos fileRef,pos
-		FBinRead/B=3/F=3/U fileRef,MAGIC
-		
-		pos += 4 //20
-		FSetPos fileRef,pos
-		FBinRead/B=3/F=3/U fileRef,VERSION
-		
-		pos += 4 //24
-		FSetPos fileRef,pos
-		FBinRead/B=3/F=3/U fileRef,FRAME_DATA_LENGTH
-		
-		pos += 4 //28
-		FSetPos fileRef,pos
-		FBinRead/B=3/F=3/U fileRef,ROI_DATA_LENGTH
-		
-		//Non-Varying Frame Data
-		pos += 4 //32
-		
-		//Get the Non-Varying Frame Data (HEADER)
-		Wave/T header_return = IE_GetHeader(fileRef,FRAME_DATA_LENGTH,pos)
-		Duplicate/O header_return,destFolder:scanInfo
-		Wave header = destFolder:scanInfo
-		
-		//Get the ROI Group Data (HEADER)
-		pos += FRAME_DATA_LENGTH
-		str = ""
-		String roiStr = PadString(str,ROI_DATA_LENGTH,0)
-		FSetPos fileRef,pos
-		FBinRead/B=3/F=3/U fileRef,roiStr
-	
-		//Extracts the ROI data
-		Wave/WAVE roiWaveRefs = IE_GetROIData(roiStr,file,header)
-
-		//Use the first ROI wave to get the number of ROIs
-		Variable numROIs = DimSize(roiWaveRefs,0)
-		
-		Close/A
-
-		//Native Igor load of the tiff. This results in a single 3D image wave that
-		//will need to be de-interleaved into multiple image waves, depending on the scan configuration.
-		ImageLoad/O/T=tiff/S=0/BIGT=1/C=-1/Q/LR3D file
-		Wave theImage = destFolder:$StringFromList(0,S_waveNames,";")
-	
-		SetDataFolder destFolder
-		
-		//Number of frames will be a multiple of the # Z levels
-		Variable frame,numFrames = DimSize(theImage,2)
-		
-		Variable prevZ,Z,offsetY,offsetZ,numZs
-		
-		//Was this a Z stack enabled scan?
-		Variable stackEnable = bool2int(IE_GetSIParam("hStackManager.enable",header))
-		
-		//Is multiROI enabled?
-		Variable mroiEnable = bool2int(IE_GetSIParam("mroiEnable",header))
-				
-		If(stackEnable)
-			String stackMode = IE_GetSIParam("stackDefinition",header)
+			Variable ref = StartMSTimer	
 			
-			//arbitrary Zs were used
-			strswitch(stackMode)
-				case "'arbitrary'":
-					//get the Z levels
-					String zs = ReplaceString(" ",IE_GetSIParam("zs",header),";")
-					zs = ReplaceString("]",ReplaceString("[",zs,""),";")
-					
-					//Number of Z levels
-					numZs = str2num(IE_GetSIParam("actualNumSlices",header))
-					
-					//Number of time steps in each volume (i.e. number of frames)
-					Variable numTimeFrames = str2num(IE_GetSIParam("actualNumVolumes",header))
-					
-					Variable framesPerSlice = str2num(IE_GetSIParam("framesPerSlice",header))
-					
-					//Volume rate (i.e. frame rate)
-					Variable frameRate = str2num(IE_GetSIParam("scanVolumeRate",header))
-					
-					break
-				case "'bounded'":
-				case "'uniform'":
-					//get the Z levels
-					zs = ReplaceString(" ",IE_GetSIParam("zs",header),";")
-					zs = ReplaceString("]",ReplaceString("[",zs,""),";")
-					
-					//Number of Z levels
-					numZs = str2num(IE_GetSIParam("actualNumSlices",header))
-					
-					//Number of time steps in each volume (i.e. number of frames)
-					numTimeFrames = str2num(IE_GetSIParam("actualNumVolumes",header))
-					
-					framesPerSlice = str2num(IE_GetSIParam("framesPerSlice",header))
-					
-					//Volume rate (i.e. frame rate)
-					frameRate = str2num(IE_GetSIParam("scanVolumeRate",header))
-					break
+			//the file path
+			String file = StringFromList(j,fileList,";")
+			DFREF destFolder = IE_CreateDestinationFolder(file)
+			
+			//Parse the full path into folder and file components
+			String fileName = ParseFilePath(0,file,":",1,0)
+			String folderPath = ParseFilePath(1,file,":",1,0)
+			
+			//Open the file
+			folderPath = RemoveEnding(folderPath,":") + ":" //ensures ending colon
+			NewPath/O/Q image,folderPath
+			
+			Open/P=image/R fileRef as file;
+		
 				
-				default:
+			//Read binary data, little endian, 64 bit integer (8 byte)
+			String str = ""
+			Variable var
+			
+			Variable IFD_HEADER_OFFSET,MAGIC,VERSION,FRAME_DATA_LENGTH,ROI_DATA_LENGTH
 		
-					zs = "0"
-					numZs = 1
-					numTimeFrames = str2num(IE_GetSIParam("framesPerSlice",header))
-					frameRate = str2num(IE_GetSIParam("scanFrameRate",header))
-					break
-			endswitch
+			//IFD HEADER OFFSET
+			FSetPos fileRef,8
+			FBinRead/B=3/F=2 fileRef,IFD_HEADER_OFFSET
+	
+			//STATIC METADATA
+			Variable pos = 16
+			
+			//Magic # - confirms this is a scanimage big tiff file
+			FSetPos fileRef,pos
+			FBinRead/B=3/F=3/U fileRef,MAGIC
+			
+			pos += 4 //20
+			FSetPos fileRef,pos
+			FBinRead/B=3/F=3/U fileRef,VERSION
+			
+			pos += 4 //24
+			FSetPos fileRef,pos
+			FBinRead/B=3/F=3/U fileRef,FRAME_DATA_LENGTH
+			
+			pos += 4 //28
+			FSetPos fileRef,pos
+			FBinRead/B=3/F=3/U fileRef,ROI_DATA_LENGTH
+			
+			//Non-Varying Frame Data
+			pos += 4 //32
+			
+			//Get the Non-Varying Frame Data (HEADER)
+			Wave/T header_return = IE_GetHeader(fileRef,FRAME_DATA_LENGTH,pos)
+			Duplicate/O header_return,destFolder:scanInfo
+			Wave header = destFolder:scanInfo
+			
+			//Get the ROI Group Data (HEADER)
+			pos += FRAME_DATA_LENGTH
+			str = ""
+			String roiStr = PadString(str,ROI_DATA_LENGTH,0)
+			FSetPos fileRef,pos
+			FBinRead/B=3/F=3/U fileRef,roiStr
 		
-		Else
-			zs = "0"
-			numZs = 1
-			numTimeFrames = numFrames
-			framesPerSlice = 1
-			frameRate = str2num(IE_GetSIParam("scanFrameRate",header))
-		EndIf
-
-		//Number of ROIs determines how many waves will be created
-		Variable i
-		String baseName = RemoveEnding(fileName,".tif")
+			//Extracts the ROI data
+			Wave/WAVE roiWaveRefs = IE_GetROIData(roiStr,file,header)
+	
+			//Use the first ROI wave to get the number of ROIs
+			Variable numROIs = DimSize(roiWaveRefs,0)
+			
+			Close/A
+	
+			//Native Igor load of the tiff. This results in a single 3D image wave that
+			//will need to be de-interleaved into multiple image waves, depending on the scan configuration.
+			ImageLoad/O/T=tiff/S=0/BIGT=1/C=-1/Q/LR3D file
+			Wave theImage = destFolder:$StringFromList(0,S_waveNames,";")
 		
-		prevZ = -1
-		offsetY = -1
-		offsetZ = 0
-		
-		//Load all the channels
-		String channelList = IE_GetSIParam("channelsActive",header)
-		channelList = ReplaceString(" ",channelList,";")
-		channelList = ReplaceString("[",channelList,"")
-		channelList = ReplaceString("]",channelList,"")
-		Variable numChannels = ItemsInList(channelList,";")
-		
-		//Microns per degree of mirror angle
-		Variable objResolution = str2num(IE_GetSIParam("objectiveResolution",header)) * 1e-6
+			SetDataFolder destFolder
+			
+			//Number of frames will be a multiple of the # Z levels
+			Variable frame,numFrames = DimSize(theImage,2)
+			
+			Variable prevZ,Z,offsetY,offsetZ,numZs
+			
+			//Was this a Z stack enabled scan?
+			Variable stackEnable = bool2int(IE_GetSIParam("hStackManager.enable",header))
+			
+			//Is multiROI enabled?
+			Variable mroiEnable = bool2int(IE_GetSIParam("mroiEnable",header))
+					
+			If(stackEnable)
+				String stackMode = IE_GetSIParam("stackDefinition",header)
+				
+				//arbitrary Zs were used
+				strswitch(stackMode)
+					case "'arbitrary'":
+						//get the Z levels
+						String zs = ReplaceString(" ",IE_GetSIParam("zs",header),";")
+						zs = ReplaceString("]",ReplaceString("[",zs,""),";")
 						
-		//Makes the waves for each ROI.
-		//Depending on the scan configuration, de-interleaving the data will also occur within this loop.
-		For(i=0;i<numROIs;i+=1)
-			Wave/T theROI = roiWaveRefs[i]
-			Variable xPixels = IE_GetROIVar("XPixels",theROI)
-			Variable yPixels = IE_GetROIVar("YPixels",theROI)
+						//Number of Z levels
+						numZs = str2num(IE_GetSIParam("actualNumSlices",header))
+						
+						//Number of time steps in each volume (i.e. number of frames)
+						Variable numTimeFrames = str2num(IE_GetSIParam("actualNumVolumes",header))
+						
+						Variable framesPerSlice = str2num(IE_GetSIParam("framesPerSlice",header))
+						
+						//Volume rate (i.e. frame rate)
+						Variable frameRate = str2num(IE_GetSIParam("scanVolumeRate",header))
+						
+						break
+					case "'bounded'":
+					case "'uniform'":
+						//get the Z levels
+						zs = ReplaceString(" ",IE_GetSIParam("zs",header),";")
+						zs = ReplaceString("]",ReplaceString("[",zs,""),";")
+						
+						//Number of Z levels
+						numZs = str2num(IE_GetSIParam("actualNumSlices",header))
+						
+						//Number of time steps in each volume (i.e. number of frames)
+						numTimeFrames = str2num(IE_GetSIParam("actualNumVolumes",header))
+						
+						framesPerSlice = str2num(IE_GetSIParam("framesPerSlice",header))
+						
+						//Volume rate (i.e. frame rate)
+						frameRate = str2num(IE_GetSIParam("scanVolumeRate",header))
+						break
+					
+					default:
 			
-			String name = IE_GetROIString("Name",theROI)
+						zs = "0"
+						numZs = 1
+						numTimeFrames = str2num(IE_GetSIParam("framesPerSlice",header))
+						frameRate = str2num(IE_GetSIParam("scanFrameRate",header))
+						break
+				endswitch
 			
-			If(stringmatch(name,"Default*"))
-				name = ""
-			EndIf
-			
-			If(strlen(name))
-				String ROIname = baseName + "_" + name
 			Else
-				ROIname = baseName + "_R" + num2str(i)
+				zs = "0"
+				numZs = 1
+				numTimeFrames = numFrames
+				framesPerSlice = 1
+				frameRate = str2num(IE_GetSIParam("scanFrameRate",header))
 			EndIf
-					
-			//remove whitespace in the naming
-			ROIname = ReplaceString(" ",ROIname,"_")
+	
+			//Number of ROIs determines how many waves will be created
+			Variable i
+			String baseName = RemoveEnding(fileName,".tif")
 			
-			numZs = (numZs == 0) ? 1 : numZs
+			prevZ = -1
+			offsetY = -1
+			offsetZ = 0
 			
-			If(framesPerSlice > 1)
-				//Z stack (probably) with multiple frames per slice
-				Make/N=(xPixels,yPixels,numZs,framesPerSlice)/O/W $ROIname/Wave=scanROI
-			Else
-				If(numROIs > 1 || numZs == 1)
-					//Not a Zstack (not necessarily true, but probably true for our purposes)
-					//Standard for multi ROI multi-plane imaging
-					
-					//Old method, create wave before filling it.
-//					Make/N=(xPixels,yPixels,(numFrames / numZs))/O/W $ROIname/Wave=scanROI
-					
-					//Just make this so the WaveDim call below works, not optimal but much faster than making the wave prior to duplication below.
-					//Should clean this up to avoid the wave creation step entirely.
-					Make/N=(1,1,1)/O/W $ROIname/Wave=scanROI
-				Else
-					//Z stack, single frame per slice, potentially multiple volumes taken (numTimeFrames)
-					Make/N=(xPixels,yPixels,numZs,numTimeFrames)/O/W $ROIname/Wave=scanROI
-				EndIf
-			EndIf
+			//Load all the channels
+			String channelList = IE_GetSIParam("channelsActive",header)
+			channelList = ReplaceString(" ",channelList,";")
+			channelList = ReplaceString("[",channelList,"")
+			channelList = ReplaceString("]",channelList,"")
+			Variable numChannels = ItemsInList(channelList,";")
+			
+			//Microns per degree of mirror angle
+			Variable objResolution = str2num(IE_GetSIParam("objectiveResolution",header)) * 1e-6
 							
-			imageList += GetWavesDataFolder(scanROI,2) + ";"	
-			
-			//These are built in scan mirror offsets used to center the image. By removing these, the scaling of the image reflects the actual stage position,
-			//which is a lot more useful for our analysis.
-			Variable XOffset = str2num(IE_GetSIParam("scanAngleShiftFast",header))
-			Variable YOffset = str2num(IE_GetSIParam("scanAngleShiftSlow",header))
-			
-			Variable XCenter = str2num(theROI[1]) - XOffset
-			Variable YCenter = str2num(theROI[2]) - YOffset
-
-			//Get the z plane of the scan ROI, and it's frame offset
-			String Zstr = theROI[5]
-			Z = str2num(Zstr)
-			
-			//Put the frames into the output waves
-			offsetZ = WhichListItem(Zstr,zs,";")
-			
-			If(offsetZ == -1)
-				offsetZ = 0
-			EndIf
-			
-			offsetY = (Z == prevZ) ? Ypixels : 0
-		
-			Variable k			
-			
-			//First step of de-interleaving the data for the z positions and frames per slice
-			//'theImage' contains all of the data, and we're pulling it out selectively into individual image waves
-			//depending on the scan configuration.
-			If(framesPerSlice == 1)
-				If(WaveDims(scanROI) == 4)			
-					Multithread scanROI[][][][] = theImage[p][offsetY + q][offsetZ + r * numZs]
-				Else
-					If(offsetY == 0 && numROIs == 1)
+			//Makes the waves for each ROI.
+			//Depending on the scan configuration, de-interleaving the data will also occur within this loop.
+			For(i=0;i<numROIs;i+=1)
+				Wave/T theROI = roiWaveRefs[i]
+				Variable xPixels = IE_GetROIVar("XPixels",theROI)
+				Variable yPixels = IE_GetROIVar("YPixels",theROI)
 				
-						Duplicate/O theImage,scanROI //much faster than indexed wave assignment
-			
-					Else
-
-						//Using duplication followed by matrix op is much faster than the below multithreaded wave assignment 
-						Variable endY = offsetY + yPixels - 1
-					
-						//Duplicate, including all of the Z pixels, which are interleaved still for multiple scanfield ROIs
-						Duplicate/FREE/RMD=[][offsetY,offsetY + yPixels-1][] theImage,temp
-						Variable endZ = DimSize(temp,2)-1
+				String name = IE_GetROIString("Name",theROI)
+				
+				If(stringmatch(name,"Default*"))
+					name = ""
+				EndIf
+				
+				If(strlen(name))
+					String ROIname = baseName + "_" + name
+				Else
+					ROIname = baseName + "_R" + num2str(i)
+				EndIf
 						
-						//De-interleave the data
-						MatrixOP/O scanROI = temp[][][offsetZ,endZ,numZs]
-			
-						//Old, slower method
-//						Multithread scanROI[][][] = theImage[p][offsetY + q][offsetZ + r * numZs]
-
+				//remove whitespace in the naming
+				ROIname = ReplaceString(" ",ROIname,"_")
+				
+				numZs = (numZs == 0) ? 1 : numZs
+				
+				If(framesPerSlice > 1)
+					//Z stack (probably) with multiple frames per slice
+					Make/N=(xPixels,yPixels,numZs,framesPerSlice)/O/W $ROIname/Wave=scanROI
+				Else
+					If(numROIs > 1 || numZs == 1)
+						//Not a Zstack (not necessarily true, but probably true for our purposes)
+						//Standard for multi ROI multi-plane imaging
+						
+						//Old method, create wave before filling it.
+	//					Make/N=(xPixels,yPixels,(numFrames / numZs))/O/W $ROIname/Wave=scanROI
+						
+						//Just make this so the WaveDim call below works, not optimal but much faster than making the wave prior to duplication below.
+						//Should clean this up to avoid the wave creation step entirely.
+						Make/N=(1,1,1)/O/W $ROIname/Wave=scanROI
+					Else
+						//Z stack, single frame per slice, potentially multiple volumes taken (numTimeFrames)
+						Make/N=(xPixels,yPixels,numZs,numTimeFrames)/O/W $ROIname/Wave=scanROI
 					EndIf
 				EndIf
-			Else
-				//Multiple frames per slice.
-				//In the tiff file, frames per slice are in the 3rd dimension, we want them in the 4th dimension in our final waves
-				For(k=0;k<numZs;k+=1)
-					Variable startZ = k*framesPerSlice
-					endZ = startZ + framesPerSlice - 1
-					MatrixOP/FREE chunk = theImage[][][startZ,endZ]
-					Multithread scanROI[][][k][] = chunk[p][q][s]
-				EndFor
-			EndIf		
+								
+				imageList += GetWavesDataFolder(scanROI,2) + ";"	
+				
+				//These are built in scan mirror offsets used to center the image. By removing these, the scaling of the image reflects the actual stage position,
+				//which is a lot more useful for our analysis.
+				Variable XOffset = str2num(IE_GetSIParam("scanAngleShiftFast",header))
+				Variable YOffset = str2num(IE_GetSIParam("scanAngleShiftSlow",header))
+				
+				Variable XCenter = str2num(theROI[1]) - XOffset
+				Variable YCenter = str2num(theROI[2]) - YOffset
+	
+				//Get the z plane of the scan ROI, and it's frame offset
+				String Zstr = theROI[5]
+				Z = str2num(Zstr)
+				
+				//Put the frames into the output waves
+				offsetZ = WhichListItem(Zstr,zs,";")
+				
+				If(offsetZ == -1)
+					offsetZ = 0
+				EndIf
+				
+				offsetY = (Z == prevZ) ? Ypixels : 0
 			
-
-			//Final step in de-interleaving the data according to channel.
-			//Channels for each frame are interleaved.
-			//Here, we're operating on the scanROI wave, which is an individual scanfield (ROI) with interleaved channel data.
-			//The output from this loop is the final output image wave.
-			Variable c
-			For(c=0;c<numChannels;c+=1)
-				String ch = "ch" + StringFromList(c,channelList,";")
-				String scanName = NameOfWave(scanROI)
-				If(numChannels > 1)
-					Duplicate/O scanROI,$(scanName + "_" + ch)
-					Wave scanChannel = $(scanName + "_" + ch)
-					Redimension/N=(-1,-1,DimSize(scanROI,2) / numChannels) scanChannel
-					scanChannel = scanROI[p][q][c + r * numChannels]
+				Variable k			
+				
+				//First step of de-interleaving the data for the z positions and frames per slice
+				//'theImage' contains all of the data, and we're pulling it out selectively into individual image waves
+				//depending on the scan configuration.
+				If(framesPerSlice == 1)
+					If(WaveDims(scanROI) == 4)			
+						Multithread scanROI[][][][] = theImage[p][offsetY + q][offsetZ + r * numZs]
+					Else
+						If(offsetY == 0 && numROIs == 1)
+					
+							Duplicate/O theImage,scanROI //much faster than indexed wave assignment
+				
+						Else
+	
+							//Using duplication followed by matrix op is much faster than the below multithreaded wave assignment 
+							Variable endY = offsetY + yPixels - 1
+						
+							//Duplicate, including all of the Z pixels, which are interleaved still for multiple scanfield ROIs
+							Duplicate/FREE/RMD=[][offsetY,offsetY + yPixels-1][] theImage,temp
+							Variable endZ = DimSize(temp,2)-1
+							
+							//De-interleave the data
+							MatrixOP/O scanROI = temp[][][offsetZ,endZ,numZs]
+				
+							//Old, slower method
+	//						Multithread scanROI[][][] = theImage[p][offsetY + q][offsetZ + r * numZs]
+	
+						EndIf
+					EndIf
 				Else
-					Duplicate/O scanROI,$(scanName + "_" + ch)
+					//Multiple frames per slice.
+					//In the tiff file, frames per slice are in the 3rd dimension, we want them in the 4th dimension in our final waves
+					For(k=0;k<numZs;k+=1)
+						Variable startZ = k*framesPerSlice
+						endZ = startZ + framesPerSlice - 1
+						MatrixOP/FREE chunk = theImage[][][startZ,endZ]
+						Multithread scanROI[][][k][] = chunk[p][q][s]
+					EndFor
 				EndIf		
 				
-				Wave scanChannel = $(scanName + "_" + ch)
-				
-				//Set the scale for the final image.
-				SetScale/I x,objResolution * (XCenter - (str2num(theROI[3]) / 2)),objResolution * (XCenter + (str2num(theROI[3]) / 2)),"m",scanChannel
-				
-				//Reverse scaling from what I originally had, so now the image is oriented the same as in MATLAB when the data is taken
-	//			SetScale/I y,objResolution * (theROI[1] - (theROI[3] / 2)),objResolution * (theROI[1] + (theROI[3] / 2)),"m",scanROI
-				SetScale/I y,objResolution * (YCenter - (str2num(theROI[4]) / 2)),objResolution * (YCenter + (str2num(theROI[4]) / 2)),"m",scanChannel
-				
-				SetScale/P z,0,str2num(theROI[12]),"s",scanChannel
-						
-			EndFor
 	
-			KillWaves/Z scanROI
-			
-			prevZ = Z
-			offsetY += yPixels
-		EndFor
+				//Final step in de-interleaving the data according to channel.
+				//Channels for each frame are interleaved.
+				//Here, we're operating on the scanROI wave, which is an individual scanfield (ROI) with interleaved channel data.
+				//The output from this loop is the final output image wave.
+				Variable c
+				For(c=0;c<numChannels;c+=1)
+					String ch = "ch" + StringFromList(c,channelList,";")
+					String scanName = NameOfWave(scanROI)
+					If(numChannels > 1)
+						Duplicate/O scanROI,$(scanName + "_" + ch)
+						Wave scanChannel = $(scanName + "_" + ch)
+						Redimension/N=(-1,-1,DimSize(scanROI,2) / numChannels) scanChannel
+						scanChannel = scanROI[p][q][c + r * numChannels]
+					Else
+						Duplicate/O scanROI,$(scanName + "_" + ch)
+					EndIf		
+					
+					Wave scanChannel = $(scanName + "_" + ch)
+					
+					//Set the scale for the final image.
+					SetScale/I x,objResolution * (XCenter - (str2num(theROI[3]) / 2)),objResolution * (XCenter + (str2num(theROI[3]) / 2)),"m",scanChannel
+					
+					//Reverse scaling from what I originally had, so now the image is oriented the same as in MATLAB when the data is taken
+		//			SetScale/I y,objResolution * (theROI[1] - (theROI[3] / 2)),objResolution * (theROI[1] + (theROI[3] / 2)),"m",scanROI
+					SetScale/I y,objResolution * (YCenter - (str2num(theROI[4]) / 2)),objResolution * (YCenter + (str2num(theROI[4]) / 2)),"m",scanChannel
+					
+					SetScale/P z,0,str2num(theROI[12]),"s",scanChannel
+							
+				EndFor
+		
+				KillWaves/Z scanROI
 				
-		Variable size = str2num(StringByKey("SIZEINBYTES",WaveInfo(theImage,0))) / (1e6)
-		
-		KillWaves/Z theImage
-		
-		print "Loaded " + file + ":", StopMSTimer(ref) / (1e6),"s (" + num2str(size) + " MB)"
-		
-	EndFor
-
-End
+				prevZ = Z
+				offsetY += yPixels
+			EndFor
+					
+			Variable size = str2num(StringByKey("SIZEINBYTES",WaveInfo(theImage,0))) / (1e6)
+			
+			KillWaves/Z theImage
+			
+			print "Loaded " + file + ":", StopMSTimer(ref) / (1e6),"s (" + num2str(size) + " MB)"
+			
+		EndFor
+	
+	End
+#endif	
 
 //Colon separated string of all the parameter fields in the header
 Function/S IE_GetParamStr()
@@ -926,198 +934,201 @@ Function/S IE_GetROIString(param,header)
 	return header[index]
 End
 
-Function/WAVE IE_GetROIData(roiStr,file,header)
-	String roiStr,file
-	Wave/T/Z header
-	
-	//Extracts the position,rotation, z plane, etc. data for all ROIs, puts into ROI output wave
-	
-	Variable imagingROIpos,photoStimROIpos,integrationROIpos
-	imagingROIpos = strsearch(roiStr,"imagingRoiGroup",0)
-	photoStimROIpos = strsearch(roiStr,"photostimRoiGroups",0)
-	integrationROIpos = strsearch(roiStr,"integrationRoiGroup",0)
-	
-	JSONXOP_Parse roiStr
-	Variable jsonID = V_Value
-	
-	//Type of JSON object (array or object, depending on if there are >1 ROI)
-	JSONXOP_GetType jsonID, "RoiGroups/imagingRoiGroup/rois"
-	
-	//How many ROIs are we extracting?
-	If(V_Value)
-		JSONXOP_GetArraySize jsonID,"RoiGroups/imagingRoiGroup/rois"
-		Variable numROI = V_Value
-		String roiPath = "RoiGroups/imagingRoiGroup/rois/"
-	Else
-		numROI = 1
-		roiPath = "RoiGroups/imagingRoiGroup/rois"
-	EndIf
-	
-	Variable i,j,k,count = 0
-	
-	
-	//Wave reference wave that will hold the ROI data waves
-	Make/FREE/WAVE/N=(0) roiWaveRefs
-	
-	For(i=0;i<numROI;i+=1)
-	
-		If(numROI > 1)
-			String roiFullPath = roiPath + num2str(i)
-		Else
-			roiFullPath = roiPath
-		EndIf
-			
-		JSONXOP_GetKeys jsonID,roiFullPath,keys
+#ifdef JSONXOP
+	Function/WAVE IE_GetROIData(roiStr,file,header)
+		String roiStr,file
+		Wave/T/Z header
 		
-		//check for more than one scanfield in the ROI
-		JSONXOP_GetType jsonID,roiFullPath + "/scanfields"
+		//Extracts the position,rotation, z plane, etc. data for all ROIs, puts into ROI output wave
 		
+		Variable imagingROIpos,photoStimROIpos,integrationROIpos
+		imagingROIpos = strsearch(roiStr,"imagingRoiGroup",0)
+		photoStimROIpos = strsearch(roiStr,"photostimRoiGroups",0)
+		integrationROIpos = strsearch(roiStr,"integrationRoiGroup",0)
+		
+		JSONXOP_Parse roiStr
+		Variable jsonID = V_Value
+		
+		//Type of JSON object (array or object, depending on if there are >1 ROI)
+		JSONXOP_GetType jsonID, "RoiGroups/imagingRoiGroup/rois"
+		
+		//How many ROIs are we extracting?
 		If(V_Value)
-			JSONXOP_GetArraySize jsonID,roiFullPath + "/scanfields"
-			Variable numScanFields = V_Value
+			JSONXOP_GetArraySize jsonID,"RoiGroups/imagingRoiGroup/rois"
+			Variable numROI = V_Value
+			String roiPath = "RoiGroups/imagingRoiGroup/rois/"
 		Else
-			numScanFields = 1
+			numROI = 1
+			roiPath = "RoiGroups/imagingRoiGroup/rois"
 		EndIf
 		
-		For(j=0;j<numScanFields;j+=1)
-			Redimension/N=(DimSize(roiWaveRefs,0) + 1) roiWaveRefs
-			
-			//Get the ROI name
-			If(numScanFields > 1)
-				//take name from the scanfields if the ROI has multiple defined
-				JSONXOP_GetValue/T jsonID,roiFullPath + "/scanfields/" + num2str(j) + "/name"
-				String name = S_Value
+		Variable i,j,k,count = 0
+		
+		
+		//Wave reference wave that will hold the ROI data waves
+		Make/FREE/WAVE/N=(0) roiWaveRefs
+		
+		For(i=0;i<numROI;i+=1)
+		
+			If(numROI > 1)
+				String roiFullPath = roiPath + num2str(i)
 			Else
-				JSONXOP_GetValue/T jsonID,roiFullPath + "/name"
-				name = S_Value
-			EndIf	
+				roiFullPath = roiPath
+			EndIf
+				
+			JSONXOP_GetKeys jsonID,roiFullPath,keys
 			
-			//Will hold the ROI data
-			If(strlen(name))
-				String roiName = "ROI_" + name
-				roiName = ReplaceString(" ",roiName,"")
+			//check for more than one scanfield in the ROI
+			JSONXOP_GetType jsonID,roiFullPath + "/scanfields"
+			
+			If(V_Value)
+				JSONXOP_GetArraySize jsonID,roiFullPath + "/scanfields"
+				Variable numScanFields = V_Value
 			Else
-				roiName = "ROI_" + num2str(count)
+				numScanFields = 1
 			EndIf
 			
-			If(stringmatch(name,"Default*"))
-				roiName = "ROI_" + num2str(count)
-			EndIf
+			For(j=0;j<numScanFields;j+=1)
+				Redimension/N=(DimSize(roiWaveRefs,0) + 1) roiWaveRefs
+				
+				//Get the ROI name
+				If(numScanFields > 1)
+					//take name from the scanfields if the ROI has multiple defined
+					JSONXOP_GetValue/T jsonID,roiFullPath + "/scanfields/" + num2str(j) + "/name"
+					String name = S_Value
+				Else
+					JSONXOP_GetValue/T jsonID,roiFullPath + "/name"
+					name = S_Value
+				EndIf	
+				
+				//Will hold the ROI data
+				If(strlen(name))
+					String roiName = "ROI_" + name
+					roiName = ReplaceString(" ",roiName,"")
+				Else
+					roiName = "ROI_" + num2str(count)
+				EndIf
+				
+				If(stringmatch(name,"Default*"))
+					roiName = "ROI_" + num2str(count)
+				EndIf
+				
+				KillWaves/Z $(":" + roiName)
+				Make/O/N=20/T $(":" + roiName)/Wave=ROI
+				
+				ROI[0] = name 
 			
-			KillWaves/Z $(":" + roiName)
-			Make/O/N=20/T $(":" + roiName)/Wave=ROI
+				If(numScanFields > 1)
+					String suffix = "/" + num2str(j)
+				Else
+					suffix = ""
+				EndIf
+						
+				JSONXOP_GetKeys jsonID,roiFullPath + "/scanfields" + suffix,scanKeys
+				
+				//Get Z plane of each Scanfield in the ROI
+				JSONXOP_GetValue/V jsonID,roiFullPath + "/zs" + suffix
+				ROI[5] = num2str(V_Value)
+				
+				JSONXOP_GetValue/V jsonID,roiFullPath + "/discretePlaneMode"
+				ROI[17] = num2str(V_Value)
+				
+				//Single plane ROIs, or volumetric ROIs
 			
-			ROI[0] = name 
+			
+				For(k=0;k<DimSize(scanKeys,0);k+=1)
+					strswitch(scanKeys[k])
+						case "centerXY": //Rows 0-1 in the ROI wave
+							Wave wv = JSON_GetWave(jsonID,roiFullPath + "/scanfields" + suffix + "/" + scanKeys[k])
+							ROI[1,2] = num2str(wv[p-1])
+							break
+						case "sizeXY":	//Rows 2-3 in the ROI wave
+							Wave wv = JSON_GetWave(jsonID,roiFullPath + "/scanfields" + suffix + "/" +scanKeys[k])
+							ROI[3,4] = num2str(wv[p-3])
+							break
+						case "rotationDegrees": //Row 5 in the ROI wave
+							JSONXOP_GetValue/V jsonID,roiFullPath + "/scanfields" + suffix + "/" + scanKeys[k]
+							ROI[6] = num2str(V_Value)
+							break
+						case "pixelResolutionXY": //Rows 6-7 in the ROI wave
+							Wave wv = JSON_GetWave(jsonID,roiFullPath + "/scanfields" + suffix + "/" + scanKeys[k])
+							ROI[7,8] = num2str(wv[p-7])
+							break
+						case "enable": //Row 13 in the ROI wave
+							JSONXOP_GetValue/V jsonID,roiFullPath + "/scanfields" + suffix + "/" + scanKeys[k]
+							ROI[14] = num2str(V_Value)
+							break					
+					endswitch
+				EndFor
+				
+				
+				ROI[10] = num2str(str2num(ROI[3]) / str2num(ROI[7])) //microns per pixel X
+				ROI[11] = num2str(str2num(ROI[4]) / str2num(ROI[8]))  //microns per pixel Y
+				
+				
+				Variable index = tableMatch("framesPerSlice",header)
+				If(index != -1)
+					ROI[9] = header[index][1] //number of frames per slice
+				EndIf
+				
+				index = tableMatch("numSlices",header)
+				If(index != -1)
+					ROI[9] = num2str( str2num(ROI[9]) * str2num(header[index][1]) )  //number of frames total
+				EndIf
+				
+				index = tableMatch("scanVolumeRate",header)
+				If(index != -1)
+					ROI[13] = header[index][1] //volume rate
+					ROI[12] = num2str(1 / str2num(ROI[13])) //seconds per volume
+				EndIf
+				
+				ROI[15] = num2str(numROI	)  //number of ROIs in the scan
+				
+				ROI[16] = num2str(numScanFields) //number of scanfields in the ROI
+				
+				//Get the slow and fast mirror offsets
+				ROI[18] = IE_GetSIParam("scanAngleShiftFast",header)
+				ROI[19] = IE_GetSIParam("scanAngleShiftSlow",header)
+				
+				//Label the ROI waves
+				SetDimLabel 0,0,Name,ROI
+				SetDimLabel 0,1,CenterX,ROI
+				SetDimLabel 0,2,CenterY,ROI
+				SetDimLabel 0,3,SizeX,ROI
+				SetDimLabel 0,4,SizeY,ROI
+				SetDimLabel 0,5,Z,ROI
+				SetDimLabel 0,6,Rotation,ROI
+				SetDimLabel 0,7,XPixels,ROI
+				SetDimLabel 0,8,YPixels,ROI
+				SetDimLabel 0,9,Slices,ROI
+				SetDimLabel 0,10,XScale,ROI
+				SetDimLabel 0,11,YScale,ROI
+				SetDimLabel 0,12,TimeScale,ROI
+				SetDimLabel 0,13,FrameRate,ROI
+				SetDimLabel 0,14,Enable,ROI
+				SetDimLabel 0,15,ROIs,ROI
+				SetDimLabel 0,16,ScanFields,ROI
+				SetDimLabel 0,17,DiscretePlane,ROI
+				SetDimLabel 0,18,ScanAngleShiftFast,ROI
+				SetDimLabel 0,19,ScanAngleShiftSlow,ROI
+				
+				roiWaveRefs[count] = ROI
+				
+				count += 1
+			EndFor	
+			
+		EndFor
 		
-			If(numScanFields > 1)
-				String suffix = "/" + num2str(j)
-			Else
-				suffix = ""
-			EndIf
-					
-			JSONXOP_GetKeys jsonID,roiFullPath + "/scanfields" + suffix,scanKeys
-			
-			//Get Z plane of each Scanfield in the ROI
-			JSONXOP_GetValue/V jsonID,roiFullPath + "/zs" + suffix
-			ROI[5] = num2str(V_Value)
-			
-			JSONXOP_GetValue/V jsonID,roiFullPath + "/discretePlaneMode"
-			ROI[17] = num2str(V_Value)
-			
-			//Single plane ROIs, or volumetric ROIs
+		//cleanup
+		KillWaves/Z wv,scanKeys,keys
+				
+		JSONXOP_Release jsonID
 		
-		
-			For(k=0;k<DimSize(scanKeys,0);k+=1)
-				strswitch(scanKeys[k])
-					case "centerXY": //Rows 0-1 in the ROI wave
-						Wave wv = JSON_GetWave(jsonID,roiFullPath + "/scanfields" + suffix + "/" + scanKeys[k])
-						ROI[1,2] = num2str(wv[p-1])
-						break
-					case "sizeXY":	//Rows 2-3 in the ROI wave
-						Wave wv = JSON_GetWave(jsonID,roiFullPath + "/scanfields" + suffix + "/" +scanKeys[k])
-						ROI[3,4] = num2str(wv[p-3])
-						break
-					case "rotationDegrees": //Row 5 in the ROI wave
-						JSONXOP_GetValue/V jsonID,roiFullPath + "/scanfields" + suffix + "/" + scanKeys[k]
-						ROI[6] = num2str(V_Value)
-						break
-					case "pixelResolutionXY": //Rows 6-7 in the ROI wave
-						Wave wv = JSON_GetWave(jsonID,roiFullPath + "/scanfields" + suffix + "/" + scanKeys[k])
-						ROI[7,8] = num2str(wv[p-7])
-						break
-					case "enable": //Row 13 in the ROI wave
-						JSONXOP_GetValue/V jsonID,roiFullPath + "/scanfields" + suffix + "/" + scanKeys[k]
-						ROI[14] = num2str(V_Value)
-						break					
-				endswitch
-			EndFor
-			
-			
-			ROI[10] = num2str(str2num(ROI[3]) / str2num(ROI[7])) //microns per pixel X
-			ROI[11] = num2str(str2num(ROI[4]) / str2num(ROI[8]))  //microns per pixel Y
-			
-			
-			Variable index = tableMatch("framesPerSlice",header)
-			If(index != -1)
-				ROI[9] = header[index][1] //number of frames per slice
-			EndIf
-			
-			index = tableMatch("numSlices",header)
-			If(index != -1)
-				ROI[9] = num2str( str2num(ROI[9]) * str2num(header[index][1]) )  //number of frames total
-			EndIf
-			
-			index = tableMatch("scanVolumeRate",header)
-			If(index != -1)
-				ROI[13] = header[index][1] //volume rate
-				ROI[12] = num2str(1 / str2num(ROI[13])) //seconds per volume
-			EndIf
-			
-			ROI[15] = num2str(numROI	)  //number of ROIs in the scan
-			
-			ROI[16] = num2str(numScanFields) //number of scanfields in the ROI
-			
-			//Get the slow and fast mirror offsets
-			ROI[18] = IE_GetSIParam("scanAngleShiftFast",header)
-			ROI[19] = IE_GetSIParam("scanAngleShiftSlow",header)
-			
-			//Label the ROI waves
-			SetDimLabel 0,0,Name,ROI
-			SetDimLabel 0,1,CenterX,ROI
-			SetDimLabel 0,2,CenterY,ROI
-			SetDimLabel 0,3,SizeX,ROI
-			SetDimLabel 0,4,SizeY,ROI
-			SetDimLabel 0,5,Z,ROI
-			SetDimLabel 0,6,Rotation,ROI
-			SetDimLabel 0,7,XPixels,ROI
-			SetDimLabel 0,8,YPixels,ROI
-			SetDimLabel 0,9,Slices,ROI
-			SetDimLabel 0,10,XScale,ROI
-			SetDimLabel 0,11,YScale,ROI
-			SetDimLabel 0,12,TimeScale,ROI
-			SetDimLabel 0,13,FrameRate,ROI
-			SetDimLabel 0,14,Enable,ROI
-			SetDimLabel 0,15,ROIs,ROI
-			SetDimLabel 0,16,ScanFields,ROI
-			SetDimLabel 0,17,DiscretePlane,ROI
-			SetDimLabel 0,18,ScanAngleShiftFast,ROI
-			SetDimLabel 0,19,ScanAngleShiftSlow,ROI
-			
-			roiWaveRefs[count] = ROI
-			
-			count += 1
-		EndFor	
-		
-	EndFor
-	
-	//cleanup
-	KillWaves/Z wv,scanKeys,keys
-			
-	JSONXOP_Release jsonID
-	
-	//return wave reference wave holding all ROI data
-	return roiWaveRefs
-End
+		//return wave reference wave holding all ROI data
+		return roiWaveRefs
+	End
+#endif
+
 
 //Same as table match, but returns a string list of all the matched indexes, not just the first encountered
 static Function/S filterTable(str,tableWave,[startp,endp,returnCol])
@@ -1579,6 +1590,8 @@ Function IE_GenerateSampleData()
 			(z > offset) ? 0.5 + gnoise(3) + (amplitude * (z - offset)/tau * exp(-(z - offset - tau)/tau)) : 0.5 + gnoise(3)
 		EndFor
 	EndFor
+	
+	IE_UpdateImageBrowserLists()
 End
 
 Function IE_OpenImageExplorer()
@@ -1671,8 +1684,11 @@ Function IE_OpenImageExplorer()
 	
 	Button displayScanField win=IE,pos={4,1},size={60,20},title="Display", focusRing = 0, font=$IE_LIGHT_FONT,proc=IE_ButtonProc,disable=0
 	Button updateImageBrowser win=IE,pos={70,1},size={70,20},title="Refresh", focusRing = 0, font=$IE_LIGHT_FONT,proc=IE_ButtonProc,disable=0 
-	
+
+#ifdef JXONXOP
 	Button getNewScans win=IE,pos={145,1},size={100,20},title="Load Scans", focusRing = 0, font=$IE_LIGHT_FONT,proc=IE_ButtonProc,disable=0
+#endif
+	
 	Checkbox displayROIMasks win=IE,pos={310,3},size={0,20},value=0,title="Show ROI Masks",font=$IE_LIGHT_FONT,fsize=12,proc=IE_CheckBoxProc,disable=1
 	
 	//set resize hook on the Image Browser for vertical sizing only
@@ -2113,14 +2129,12 @@ Function IE_ZoomScrollHook(s)
 					Variable rows,cols
 					rows = DimSize(theImage,0)
 					cols = DimSize(theImage,1)
-					
+																				
 					//Horizontal index of image
 					hPixel = AxisValFromPixel(target,"top",s.mouseLoc.h)
 					
-					
 					//Vertical index of image
-					vPixel = AxisValFromPixel(target,"left",s.mouseLoc.v)
-					
+					vPixel = AxisValFromPixel(target,"left",s.mouseLoc.v)					
 					
 					//Kill the indicator box
 					DrawAction/L=Overlay/W=$target getgroup=dynamicROIIndicator,delete
@@ -2146,7 +2160,7 @@ Function IE_ZoomScrollHook(s)
 					right = (right > xEndPix) ? xEndPix : right
 					bottom = (bottom < DimOffset(theImage,1)) ? DimOffset(theImage,1) : bottom
 					top = (top > yEndPix) ? yEndPix : top
-//				
+									
 					SetDrawLayer/W=$target Overlay
 					SetDrawEnv/W=$target gname=dynamicROIIndicator,gstart
 					SetDrawEnv/W=$target linethick=1,linefgc=(0,43690,65535),xcoord=top,ycoord=left,fillpat=0
@@ -2681,6 +2695,30 @@ Function IE_DrawROISquare(target,hPixel,vPixel)
 	SetDrawEnv/W=$target xcoord=top,ycoord=left,linethick=2,linefgc=(0,0xffff,0),fillfgc=(0,0,0,0)
 	DrawRect/W=$target left,top,right,bottom
 	SetDrawEnv/W=$target gstop
+End
+
+Function IE_ClearROISquare()
+	DFREF NTSI = $IE
+	NVAR numImages = NTSI:numImages
+
+	Variable i
+	For(i=0;i<numImages;i+=1)
+		String target = "IEDisplay#image" + num2str(i) + "#graph" + num2str(i)
+		DrawAction/L=Overlay/W=$target getgroup=roiIndicator,delete
+	EndFor
+	
+End
+
+Function IE_ClearMarquee()
+	DFREF NTSI = $IE
+	NVAR numImages = NTSI:numImages
+
+	Variable i
+	For(i=0;i<numImages;i+=1)
+		String target = "IEDisplay#image" + num2str(i) + "#graph" + num2str(i)
+		GetMarquee/K/W=$target
+	EndFor
+	
 End
 
 //Returns the X and Y ROI waves at the provided axis coordinates on the image graph 'graphRef'
@@ -3231,6 +3269,9 @@ Function IE_VarProc(sva) : SetVariableControl
 	return 0
 End
 
+Constant ROIPanelWidth = 110
+Constant ROIPanelHeight = 300
+
 //Handles list box selections in the ScanImage package
 Function IE_ButtonProc(ba) : ButtonControl
 	STRUCT WMButtonAction &ba
@@ -3264,7 +3305,9 @@ Function IE_ButtonProc(ba) : ButtonControl
 
 					break
 				case "getNewScans":
-					IE_BrowseScanImage() //enters main function to browse scans to load
+					#ifdef JXONXOP
+						IE_BrowseScanImage() //enters main function to browse scans to load
+					#endif
 					IE_UpdateImageBrowserLists()
 					break
 				case "autoScale":
@@ -3339,8 +3382,10 @@ Function IE_ButtonProc(ba) : ButtonControl
 						break
 					EndIf
 					
-					NewPanel/EXT=1/HOST=IEDisplay/N=ROIPanel/W=(110,0,0,300) as "Create ROIs"
-					PopUpMenu roiType,win=IEDisplay#ROIPanel,pos={54,10},bodywidth=72,title="Type",font=$IE_LIGHT_FONT,value="Click;Marquee;Draw;",proc=IE_PopProc
+					NewPanel/EXT=1/HOST=IEDisplay/N=ROIPanel/W=(ROIPanelWidth,0,0,ROIPanelHeight) as "Create ROIs"
+					
+					Variable strWidth = FontSizeStringWidth(IE_LIGHT_FONT, 12, 0, "Type")
+					PopUpMenu roiType,win=IEDisplay#ROIPanel, pos = {2, 2}, bodywidth = ROIPanelWidth - strWidth - 6,  title="Type",font=$IE_LIGHT_FONT,value="Click;Marquee;Draw;",proc=IE_PopProc
 			
 					//Disable the movement hook for marquee mode
 					ControlInfo/W=IEDisplay#ROIPanel roiType
@@ -3350,9 +3395,9 @@ Function IE_ButtonProc(ba) : ButtonControl
 						SetWindow IEDisplay hook(zoomScrollHook) = $""
 					EndIf
 
-					SetVariable roiWidth,win=IEDisplay#ROIPanel,pos={100,35},size={93,20},bodywidth=50,title="W (µm)",align=1,font=$IE_LIGHT_FONT,limits={0.5,inf,1},value=ROI_Width,disable=1
-					SetVariable roiHeight,win=IEDisplay#ROIPanel,pos={100,55},size={93,20},bodywidth=50,title="H (µm)",align=1,font=$IE_LIGHT_FONT,limits={0.5,inf,1},value=ROI_Height,disable=1
-					SetVariable ROIname win=IEDisplay#ROIPanel,pos={3,35},size={93,20},font=$IE_LIGHT_FONT,value=_STR:"",title="Name",disable=0
+					SetVariable roiWidth,win=IEDisplay#ROIPanel,pos={100,35},size={93,20},bodywidth=60,title="W (µm)",align=1,font=$IE_LIGHT_FONT,limits={0.5,inf,1},value=ROI_Width,disable=1
+					SetVariable roiHeight,win=IEDisplay#ROIPanel,pos={100,55},size={93,20},bodywidth=60,title="H (µm)",align=1,font=$IE_LIGHT_FONT,limits={0.5,inf,1},value=ROI_Height,disable=1
+					SetVariable ROIname win=IEDisplay#ROIPanel,pos={100,35}, size={93,20},bodywidth=60, align = 1, font=$IE_LIGHT_FONT,value=_STR:"",title="Name",disable=0
 								
 					IE_UpdateImageBrowserLists()
 					IE_RefreshROIGroupList()
@@ -3360,15 +3405,61 @@ Function IE_ButtonProc(ba) : ButtonControl
 					Wave/T ROIGroupListWave = NTSI:ROIGroupListWave
 					String/G NTSI:GroupList 
 					SVAR GroupList = NTSI:GroupList
-					GroupList = "**NEW**;" + TextWaveToStringList(ROIGroupListWave,";")
+					GroupList = TextWaveToStringList(ROIGroupListWave,";")
 					
-					PopUpMenu roiGroupSelect,win=IEDisplay#ROIPanel,pos={54,55},bodywidth=72,title="Group",font=$IE_LIGHT_FONT,value=#"root:Packages:NeuroToolsPlus:ScanImage:GroupList",proc=IE_PopProc
+					strWidth = FontSizeStringWidth(IE_LIGHT_FONT, 12, 0, "Group")
+					PopUpMenu roiGroupSelect,win=IEDisplay#ROIPanel,pos={2,55},bodywidth=ROIPanelWidth-strWidth - 6,title="Group",font=$IE_LIGHT_FONT,value=#"root:Packages:NeuroToolsPlus:ScanImage:GroupList",proc=IE_PopProc
+					Button addGroup win=IEDisplay#ROIPanel,pos={9,80},size={ROIPanelWidth - 4,20},font=$IE_LIGHT_FONT,title="Add Group",proc=IE_ButtonProc
 					SetVariable pctFillThreshold,win=IEDisplay#ROIPanel,pos={47,35},size={60,20},bodywidth=30,title="%",value=ROI_PctThreshold,disable=1
 					Button nudgeROI win=IEDisplay#ROIPanel,pos={9,77},size={93,20},font=$IE_LIGHT_FONT,valueColor=(0,0x9999,0),title="Nudge ROIs",disable=0,proc=IE_ButtonProc
-					Button addROI win=IEDisplay#ROIPanel,pos={2,100},size={20,20},font=$IE_LIGHT_FONT,valueColor=(0,0x9999,0),title="+",disable=0,proc=IE_ButtonProc
-					Button confirmROI win=IEDisplay#ROIPanel,pos={25,100},size={81,20},font=$IE_LIGHT_FONT,valueColor=(0,0x9999,0),title="Done",disable=0,proc=IE_ButtonProc
+					Button addROI win=IEDisplay#ROIPanel,pos={2,100},size={ROIPanelWidth - 4,20},font=$IE_LIGHT_FONT,valueColor=(0,0x9999,0),title="Add ROI",disable=0,proc=IE_ButtonProc
+					Button confirmROI win=IEDisplay#ROIPanel,pos={2,100},size={ROIPanelWidth - 4,20},font=$IE_LIGHT_FONT,valueColor=(0,0x9999,0),title="Done",disable=0,proc=IE_ButtonProc
 					
 					IE_SwitchROIControls(S_Value)
+					break
+				
+				case "addGroup":
+					//Pops up a dialog for the user to name a new ROI group
+					String newGroupName = ""
+					Prompt newGroupName, "New group name:"
+					DoPrompt "Add ROI Group", newGroupName
+					
+					If(V_flag) //user cancelled
+						break
+					EndIf
+					
+					//Sanitize the name for use as a data folder
+					newGroupName = CleanupName(newGroupName, 0)
+					
+					If(!strlen(newGroupName))
+						break
+					EndIf
+					
+					//Create the ROI group folder
+					If(!DataFolderExists("root:Packages:NeuroToolsPlus:ScanImage:ROIs"))
+						NewDataFolder root:Packages:NeuroToolsPlus:ScanImage:ROIs
+					EndIf
+					
+					String roiFolder = "root:Packages:NeuroToolsPlus:ScanImage:ROIs:"
+					
+					If(DataFolderExists(roiFolder + newGroupName))
+						DoAlert 0, "A group named '" + newGroupName + "' already exists."
+						break
+					EndIf
+					
+					NewDataFolder $(roiFolder + newGroupName)
+					
+					//Refresh lists and select the new group
+					IE_UpdateImageBrowserLists()
+					IE_RefreshROIGroupList()
+					
+					SVAR GroupList = NTSI:GroupList
+					Variable groupIndex = WhichListItem(newGroupName, GroupList, ";")
+					If(groupIndex != -1)
+						PopUpMenu roiGroupSelect,win=IEDisplay#ROIPanel,mode=groupIndex+1
+						ControlUpdate/A
+					EndIf
+					
 					break
 				
 				case "addROI":
@@ -3966,6 +4057,10 @@ Function IE_ListBoxProc(lba) : ListBoxControl
 										
 										If(DimSize(ROIListWave,0) > 0)										
 											ROIListWave = ROIFolder + ROIListWave[p]
+											
+											// This removes any ROIs that are currently displayed in the image display
+											// so that they actually get deleted
+											IE_AppendROIsToImage("", "")
 										
 											Variable i
 											For(i=0;i<DimSize(ROIListWave,0);i+=1)
@@ -5046,53 +5141,78 @@ Function IE_SwitchROIControls(roiType)
 	roiTypeStr = roiType
 	NVAR ROI_Engaged = NTSI:ROI_Engaged
 	
+	ControlInfo/W=IEDisplay#ROIPanel roiType
+	Variable controlYPosStart = V_top + 25
+	Variable controlYPos = controlYPosStart
+
 	strswitch(roiType)
 		case "Marquee":
-			SetVariable roiWidth,win=IEDisplay#ROIPanel,disable=1
-			SetVariable roiHeight,win=IEDisplay#ROIPanel,disable=1
-			SetVariable ROIname,win=IEDisplay#ROIPanel,pos={3,35},disable=0
-			Button nudgeROI win=IEDisplay#ROIPanel,pos={9,77}
-			Button addROI,win=IEDisplay#ROIPanel,disable=0
-			Button confirmROI,win=IEDisplay#ROIPanel,pos={25,100},size={81,20},title="Done"
-			PopUpMenu roiGroupSelect,win=IEDisplay#ROIPanel,pos={5,55},bodywidth=72,disable=0
-			SetVariable pctFillThreshold,win=IEDisplay#ROIPanel,disable=1
+			controlYPos = controlYPosStart
 			
+			SetVariable ROIname,win=IEDisplay#ROIPanel,pos={100,controlYPos},disable=0; controlYPos += 25
+			Button addGroup,win=IEDisplay#ROIPanel,pos={2,controlYPos}; controlYPos += 25
+			PopUpMenu roiGroupSelect,win=IEDisplay#ROIPanel,pos={2, controlYPos}, disable=0; controlYPos += 25
+			Button addROI,win=IEDisplay#ROIPanel,pos={2, controlYPos}, disable=0; controlYPos += 25
+			Button confirmROI,win=IEDisplay#ROIPanel,pos={2,controlYPos},title="Done"; controlYPos += 25
+
+		
+			// Disabled in this mode
+			SetVariable roiWidth,win=IEDisplay#ROIPanel,disable=1;
+			SetVariable roiHeight,win=IEDisplay#ROIPanel,disable=1;
+			SetVariable pctFillThreshold,win=IEDisplay#ROIPanel,disable=1
+			Button nudgeROI win=IEDisplay#ROIPanel,pos={2,controlYPos}, disable=1
+
+			IE_ClearROISquare()
 //			SetWindow IEDisplay hook(zoomScrollHook) = $""
 			ROI_Engaged = 1
 			SetWindow IEDisplay hook(zoomScrollHook) = zoomScrollHook
 			break
 		case "Click":
-			SetVariable roiWidth,win=IEDisplay#ROIPanel,disable=0
-			SetVariable roiHeight,win=IEDisplay#ROIPanel,disable=0
-			SetVariable ROIname,win=IEDisplay#ROIPanel,pos={3,75},disable=0
-			Button nudgeROI win=IEDisplay#ROIPanel,pos={9,117}
-			Button addROI,win=IEDisplay#ROIPanel,disable=1
-			Button confirmROI,win=IEDisplay#ROIPanel,pos={9,140},size={93,20},title="Start"
-			PopUpMenu roiGroupSelect,win=IEDisplay#ROIPanel,pos={5,95},bodywidth=72, disable=0
+			controlYPos = controlYPosStart
+			
+			SetVariable ROIname,win=IEDisplay#ROIPanel,pos={100,controlYPos},disable=0;controlYPos += 25
+			SetVariable roiWidth,win=IEDisplay#ROIPanel,pos={100,controlYPos},disable=0; controlYPos+= 25
+			SetVariable roiHeight,win=IEDisplay#ROIPanel,pos={100,controlYPos},disable=0; controlYPos+= 25
+			Button addGroup,win=IEDisplay#ROIPanel,pos={2,controlYPos}; controlYPos += 25
+			PopUpMenu roiGroupSelect,win=IEDisplay#ROIPanel,pos={2, controlYPos}, disable=0; controlYPos += 25
+			Button confirmROI,win=IEDisplay#ROIPanel,pos={2,controlYPos}, title="Start"; controlYPos += 25
+			
+			// Disabled in this mode
+			Button nudgeROI win=IEDisplay#ROIPanel,pos={2,controlYPos}, disable=1
+			Button addROI,win=IEDisplay#ROIPanel,pos={2,controlYPos},disable=1;
 			SetVariable pctFillThreshold,win=IEDisplay#ROIPanel,disable=1
 			
+			IE_ClearMarquee()
 			SetWindow IEDisplay hook(zoomScrollHook) = IE_ZoomScrollHook
 			break
 		case "Draw":
+			controlYPos = controlYPosStart
+			
+			SetVariable ROIname,win=IEDisplay#ROIPanel,pos={100,controlYPos},disable=0; controlYPos += 25
+			Button addROI,win=IEDisplay#ROIPanel,pos={2, controlYPos},disable=0; controlYPos += 25
+			PopUpMenu roiGroupSelect,win=IEDisplay#ROIPanel,pos={2,controlYPos},disable=0; controlYPos += 25
+			Button addGroup,win=IEDisplay#ROIPanel,pos={2,controlYPos}; controlYPos += 25
+			Button confirmROI,win=IEDisplay#ROIPanel,pos={2,controlYPos},title="Start"; controlYPos += 25
+
+			
+			// Disabled in this mode
 			SetVariable roiWidth,win=IEDisplay#ROIPanel,disable=1
 			SetVariable roiHeight,win=IEDisplay#ROIPanel,disable=1
-			SetVariable ROIname,win=IEDisplay#ROIPanel,pos={3,35},disable=0
-			Button nudgeROI win=IEDisplay#ROIPanel,pos={9,77}
-			Button addROI,win=IEDisplay#ROIPanel,disable=0
-			Button confirmROI,win=IEDisplay#ROIPanel,pos={25,100},size={81,20},title="Start"
-			PopUpMenu roiGroupSelect,win=IEDisplay#ROIPanel,pos={5,55},bodywidth=72,disable=0
+			Button nudgeROI win=IEDisplay#ROIPanel, disable =1
 			SetVariable pctFillThreshold,win=IEDisplay#ROIPanel,disable=1
 			
+			IE_ClearMarquee()
 			SetWindow IEDisplay hook(zoomScrollHook) = IE_ZoomScrollHook
 			break
 		case "Grid":
 			SetVariable roiWidth,win=IEDisplay#ROIPanel,disable=0
 			SetVariable roiHeight,win=IEDisplay#ROIPanel,disable=0
-			SetVariable ROIname,win=IEDisplay#ROIPanel,pos={3,75},disable=0
+			SetVariable ROIname,win=IEDisplay#ROIPanel,pos={100,75},disable=0
 			Button nudgeROI win=IEDisplay#ROIPanel,pos={9,117}
 			Button addROI,win=IEDisplay#ROIPanel,disable=1
-			Button confirmROI,win=IEDisplay#ROIPanel,pos={9,140},size={93,20},title="Start"
-			PopUpMenu roiGroupSelect,win=IEDisplay#ROIPanel,pos={5,95},bodywidth=72,disable=0
+			Button confirmROI,win=IEDisplay#ROIPanel,pos={9,140},title="Start"
+			PopUpMenu roiGroupSelect,win=IEDisplay#ROIPanel,pos={54,95},bodywidth=72,disable=0
+			Button addGroup,win=IEDisplay#ROIPanel,pos={2,120}
 			SetVariable pctFillThreshold,win=IEDisplay#ROIPanel,disable=0
 			SetWindow IEDisplay hook(zoomScrollHook) = IE_ZoomScrollHook
 			break
@@ -5261,7 +5381,7 @@ Function IE_RefreshROIGroupList()
 	Wave/T ROIGroupListWave = NTSI:ROIGroupListWave
 	String/G NTSI:GroupList 
 	SVAR GroupList = NTSI:GroupList
-	GroupList = "**NEW**;" + TextWaveToStringList(ROIGroupListWave,";")
+	GroupList = TextWaveToStringList(ROIGroupListWave,";")
 
 End
 
@@ -5341,7 +5461,7 @@ Function/WAVE IE_CreateROI(left,top,right,bottom,[group,baseName,autoName])
 	EndIf
 	
 	If(ParamIsDefault(group))
-		group = "**NEW**"
+		group = ""
 	EndIf
 	
 	If(!DataFolderExists("root:Packages:NeuroToolsPlus:ScanImage:ROIs"))
@@ -5352,11 +5472,22 @@ Function/WAVE IE_CreateROI(left,top,right,bottom,[group,baseName,autoName])
 	
 	DFREF saveDF = GetDataFolderDFR()
 	
-	//Make a new ROI group if selected
-	If(!cmpstr(group,"**NEW**"))
-		SetDataFolder $roiFolder
-		group = UniqueName("Group",11,0)
-		NewDataFolder $(roiFolder + group)
+	//If no valid group, prompt user to create one
+	If(!strlen(group) || !DataFolderExists(roiFolder + group))
+		String newGroupName = ""
+		Prompt newGroupName, "New group name:"
+		DoPrompt "Add ROI Group", newGroupName
+		If(V_flag) //user cancelled
+			return $""
+		EndIf
+		newGroupName = CleanupName(newGroupName, 0)
+		If(!strlen(newGroupName))
+			return $""
+		EndIf
+		If(!DataFolderExists(roiFolder + newGroupName))
+			NewDataFolder $(roiFolder + newGroupName)
+		EndIf
+		group = newGroupName
 	EndIf
 	
 	//If automatic naming is indicated or we're creating a new group
@@ -5432,8 +5563,8 @@ Function/WAVE IE_CreateROI(left,top,right,bottom,[group,baseName,autoName])
 	
 	SetDataFolder saveDF
 	
-	//Set the ROI Group Selector to the current group, in case ***NEW** group was created.
-	//This will allow you to click-create ROIs in a NEW group without having to choose the group that
+	//Set the ROI Group Selector to the current group.
+	//This will allow you to click-create ROIs in a new group without having to choose the group that
 	//was just created. 
 	DFREF NTSI = $IE
 	
@@ -5465,11 +5596,22 @@ Function IE_CreateDrawnROI(drawROIX,drawROIY,target,group,baseName)
 	
 	DFREF saveDF = GetDataFolderDFR()
 	
-	//Make a new ROI group if selected
-	If(!cmpstr(group,"**NEW**"))
-		SetDataFolder $roiFolder
-		group = UniqueName("Group",11,0)
-		NewDataFolder $(roiFolder + group)
+	//If no valid group, prompt user to create one
+	If(!strlen(group) || !DataFolderExists(roiFolder + group))
+		String newGroupName = ""
+		Prompt newGroupName, "New group name:"
+		DoPrompt "Add ROI Group", newGroupName
+		If(V_flag) //user cancelled
+			return 0
+		EndIf
+		newGroupName = CleanupName(newGroupName, 0)
+		If(!strlen(newGroupName))
+			return 0
+		EndIf
+		If(!DataFolderExists(roiFolder + newGroupName))
+			NewDataFolder $(roiFolder + newGroupName)
+		EndIf
+		group = newGroupName
 	EndIf
 	
 	
@@ -5505,8 +5647,8 @@ Function IE_CreateDrawnROI(drawROIX,drawROIY,target,group,baseName)
 	
 	SetDataFolder saveDF
 	
-	//Set the ROI Group Selector to the current group, in case ***NEW** group was created.
-	//This will allow you to click-create ROIs in a NEW group without having to choose the group that
+	//Set the ROI Group Selector to the current group.
+	//This will allow you to click-create ROIs in a new group without having to choose the group that
 	//was just created. 
 	DFREF NTSI = $IE
 	
@@ -5648,11 +5790,22 @@ Function IE_CreateROIGrid(w,h,threshold,target,group,baseName)
 
 	String roiFolder = "root:Packages:NeuroToolsPlus:ScanImage:ROIs:"
 	
-	//Make a new ROI group if selected
-	If(!cmpstr(group,"**NEW**"))
-		SetDataFolder $roiFolder
-		group = UniqueName("Group",11,0)
-		NewDataFolder $(roiFolder + group)
+	//If no valid group, prompt user to create one
+	If(!strlen(group) || !DataFolderExists(roiFolder + group))
+		String newGroupName = ""
+		Prompt newGroupName, "New group name:"
+		DoPrompt "Add ROI Group", newGroupName
+		If(V_flag) //user cancelled
+			return 0
+		EndIf
+		newGroupName = CleanupName(newGroupName, 0)
+		If(!strlen(newGroupName))
+			return 0
+		EndIf
+		If(!DataFolderExists(roiFolder + newGroupName))
+			NewDataFolder $(roiFolder + newGroupName)
+		EndIf
+		group = newGroupName
 	EndIf
 	
 	//First get a variance map of the image, in order to create a dendritic mask
