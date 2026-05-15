@@ -1930,9 +1930,7 @@ Function IE_PopProc(pa) : PopupMenuControl
 	return 0
 End
 
-Function IE_PrintHoverROI(ROI)
-	String ROI
-	
+Function IE_PrintHoverROI(String ROI)
 	SetDrawLayer/W=IEDisplay#control UserBack
 	DrawAction/L=UserBack/W=IEDisplay#control getgroup=HoverROIText,delete
 	SetDrawEnv/W=IEDisplay#control fsize=12,fname="Helvetica Light",xcoord=abs,ycoord=abs,textxjust=0,textyjust=1,gname=HoverROIText,gstart
@@ -3025,11 +3023,7 @@ Function IE_StepFrame()
 		ModifyImage/Z/W=IEDisplay#$("image" + num2str(i))#$("graph" + num2str(i)) $name plane=plane
 	EndFor
 	
-	DrawAction/W=IEDisplay#control getgroup=frameCountText, delete
-	GetWindow/Z IEDisplay wsize
-	SetDrawEnv/W=IEDisplay#control textxjust=0,gstart,gname=frameCountText
-	DrawText/W=IEDisplay#control 150,40,"Frame: " + num2str(plane) + ", " + num2str(plane * DimDelta(theImage,2)) + "s"
-	SetDrawEnv/W=IEDisplay#control gstop
+	TitleBox frameCounter, win=IEDisplay#control, title = "Frame: " + num2str(plane) + ", " + num2str(plane * DimDelta(theImage,2)) + "s"
 	return 0
 	
 End
@@ -3073,11 +3067,8 @@ Function IE_PlayFramesBackroundTask(s)
 		
 	EndFor
 	
-	DrawAction/W=IEDisplay#control getgroup=frameCountText,delete
-	GetWindow/Z IEDisplay wsize
-	SetDrawEnv/W=IEDisplay#control textxjust=0,gstart,gname=frameCountText
-	DrawText/W=IEDisplay#control 150,40,"Frame: " + num2str(plane) + ", " + num2str(plane * DimDelta(theImage,2)) + "s"
-	SetDrawEnv/W=IEDisplay#control gstop
+	TitleBox frameCounter, win=IEDisplay#control, title = "Frame: " + num2str(plane) + ", " + num2str(plane * DimDelta(theImage,2)) + "s"
+	
 	return 0
 End
 
@@ -4925,7 +4916,8 @@ Function IE_DisplayScanField(imageList[,add])
 	Slider brightValueSlider win=IEDisplay#control,pos={5,35},size={75,20},vert=0,side=0, thumbColor=(48059,48059,48059), limits={0,100,1}, focusRing = 0, value=100,proc=IE_SliderProc
 	Button scale94pct win=IEDisplay#control,pos={90,25},size={20,20},title="S",proc=IE_ButtonProc
 	Button invert win=IEDisplay#control,pos={120,25},size={20,20},font=$IE_LIGHT_FONT,title="-1",disable=0,proc=IE_ButtonProc
-
+	TitleBox frameCounter win = IEDisplay#control, pos = {145, 25}, size={120, 20}, frame=0, title="",disable = 0
+	
 	//Bring panel to the front
 	DoWindow/F IEDisplay
 	
