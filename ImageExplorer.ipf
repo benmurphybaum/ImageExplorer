@@ -1592,8 +1592,8 @@ End
 Function IE_OpenImageExplorer()
 	//Create the ScanImage Browsing panel
 	
-	Variable width = 575
-	Variable height = 155
+	Variable width = 650
+	Variable height = 200
 	
 	GetWindow/Z IE wsize
 	If(!V_flag)
@@ -1668,9 +1668,10 @@ Function IE_OpenImageExplorer()
 	leftPos += 2 * colWidth + 5
 
 	ListBox roiGroups win=IE,pos={leftPos,40},size={0.5 * colWidth, 90},title="",listWave=ROIGroupListWave,selWave=ROIGroupSelWave,mode=9,proc=IE_ListBoxProc,disable=0
-	Button extractROIs win=IE, pos={leftPos,224}, size = {100, 20}, disable=0, title = "Extract ROIs", focusRing = 0, proc=IE_ButtonProc
+	PopupMenu functionMenu win=IE, pos={leftPos,224}, size = {100, 20}, disable=0, focusRing = 0, value = "Extract ROIs", proc=IE_PopProc
 	resizeListBoxPositions[3] = leftPos - 3 // ROI Groups
 	leftPos += 0.5 * colWidth + 5
+	Button executeFunction win=IE, pos={leftPos,224}, size={40,20}, title = "Run", disable=0, focusRing = 0, proc=IE_ButtonProc
 	
 	SetDrawEnv/W=IE fname=$IE_LIGHT_FONT,fsize=12,xcoord=abs,ycoord=abs, textxjust=1
 	DrawText/W=IE leftPos,39,"ROI Groupings"
@@ -1787,8 +1788,11 @@ Function IE_ImageBrowserMouseHook(s)
 					ControlInfo/W=IE scanfieldMatch
 					SetVariable scanfieldMatch win=IE,pos = {V_left + xExpand,V_top}
 					
-					ControlInfo/W=IE extractROIs
-					Button extractROIs win=IE,pos = {V_left + xExpand,V_top}
+					ControlInfo/W=IE functionMenu
+					PopUpMenu functionMenu win=IE,pos = {V_left + xExpand,V_top}
+					
+					ControlInfo/W=IE executeFunction
+					Button executeFunction win=IE, pos = {V_left + xExpand,V_top}
 
 				ElseIf(columnDrag < 3)
 					ControlInfo/W=IE selectAllScanFields
@@ -1797,8 +1801,10 @@ Function IE_ImageBrowserMouseHook(s)
 					ControlInfo/W=IE scanfieldMatch
 					SetVariable scanfieldMatch win=IE,pos = {V_left + xExpand,V_top}
 					
-					ControlInfo/W=IE extractROIs
-					Button extractROIs win=IE,pos = {V_left + xExpand,V_top}
+					ControlInfo/W=IE functionMenu
+					PopUpMenu functionMenu win=IE,pos = {V_left + xExpand,V_top}
+					
+					Button executeFunction win=IE, pos = {V_right + 2 + xExpand,V_top}
 				EndIf				
 				
 								
@@ -1914,6 +1920,11 @@ Function IE_PopProc(pa) : PopupMenuControl
 				case "roiType":
 					//handle ROI creation control displays
 					IE_SwitchROIControls(popStr)
+					break
+				case "functionMenu":
+					if (!cmpstr(pa.popStr, "Extract ROIs"))
+						IE_ExtractROIs()
+					endif
 					break
 			endswitch
 			
@@ -5071,8 +5082,9 @@ Function IE_ResizeHook(s)
 			ControlInfo/W=IE scanFieldMatch
 			SetVariable scanFieldMatch win=IE,pos={V_left + 2 * controlExpand,vPos},size = {V_width + controlExpand,20}
 			
-			ControlInfo/W=IE extractROIs
-			Button extractROIs win=IE, pos={V_left + 3 * controlExpand, vPos - 3}
+			ControlInfo/W=IE functionMenu
+			PopupMenu functionMenu win=IE, pos={V_left + 3 * controlExpand, vPos - 3}
+			Button executeFunction win=IE, pos={V_Right + 2 + 3 * controlExpand, vPos - 3}
 
 			//Shift the checkboxes
 			ControlInfo/W=IE selectAllScanGroups
