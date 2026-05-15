@@ -1,0 +1,5 @@
+IGOR
+X // standalone install script
+X DoAlert 0, "ImageExplorer Installer:\n\n ImageExplorer requires the JSON XOP from BytePhysics (https://www.wavemetrics.com/node/20976).\n\n Please ensure you have installed the XOP, otherwise ImageExplorer will not compile."
+X CopyFile/Z/O/D S_path + "ImageExplorer.ipf" as SpecialDirPath("Igor Pro User Files", 0, 0, 0) + "Igor Procedures:"
+X DoAlert 0, SelectString(V_flag==0, "Could not copy ImageExplorer.ipf", "Please restart Igor to complete installation")
