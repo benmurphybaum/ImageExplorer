@@ -1921,11 +1921,6 @@ Function IE_PopProc(pa) : PopupMenuControl
 					//handle ROI creation control displays
 					IE_SwitchROIControls(popStr)
 					break
-				case "functionMenu":
-					if (!cmpstr(pa.popStr, "Extract ROIs"))
-						IE_ExtractROIs()
-					endif
-					break
 			endswitch
 			
 			break
@@ -3785,9 +3780,14 @@ Function IE_ButtonProc(ba) : ButtonControl
 				case "NeuronTracer":
 					Execute/Q/Z "NeuronTracer()" //in case it isn't part of the Scanimage package of the user for some reason
 					break
-				case "extractROIs":
+				case "executeFunction":
 					// Extract ROI function
-					IE_ExtractROIs()
+					ControlInfo/W=IE functionMenu
+					strswitch (S_Value)
+						case "Extract ROIs":
+							IE_ExtractROIs()
+							break
+					endswitch
 					break
 			endswitch
 			break
