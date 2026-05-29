@@ -6621,7 +6621,7 @@ Function IE_ExtractROIs()
 			F = ROI_Signal
 			
 			//Set the wave note with the original scan name
-			Note F,"Scan: " + GetWavesDataFolder(theScan,2)
+			Note F,"Scan: " + GetWavesDataFolder(theScanTemp,2)
 		EndFor
 		
 	
