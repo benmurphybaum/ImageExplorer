@@ -2,6 +2,8 @@
 #pragma rtGlobals=3		// Use modern global access method and strict wave access.
 #pragma rtFunctionErrors=1
 
+#include ":CurvesAdjustment"
+
 static constant kProjectID=22059
 static strconstant ksShortTitle="Image Explorer" // the project short title on IgorExchange
 
