@@ -95,6 +95,11 @@ static strconstant ksShortTitle="Image Explorer" // the project short title on I
 
 StrConstant IE = "root:Packages:ImageExplorer"
 StrConstant IE_LIGHT_FONT = "Calibri Light"
+Constant IE_MIN_WIDTH = 575
+Constant IE_MIN_HEIGHT = 125
+
+//Guides at the right edge of each Image Browser list box, left to right. Dragging between list boxes moves these.
+StrConstant IE_SPLIT_GUIDES = "ieSplit1;ieSplit2;ieSplit3;ieSplit4;ieRight"
 
 Menu "Analysis"
 	SubMenu "Packages"
@@ -1360,8 +1365,6 @@ Function IE_CreatePackage()
 	//when the Image Browser panel is first opened.
 	Variable/G NTSI:resizeTimeOut
 	
-	Make/O/N=5 NTSI:resizeListBoxPositions/Wave = resizeListBoxPositions
-	
 	Variable/G NTSI:columnDrag
 	NVAR columnDrag = NTSI:columnDrag
 	columnDrag = 0
@@ -1643,42 +1646,49 @@ Function IE_OpenImageExplorer()
 	EndIf	
 	
 	Variable colWidth = floor((width - 6 * 5) /5)
-	Variable leftPos = 5
 	
-	Wave resizeListBoxPositions = NTSI:resizeListBoxPositions
+	//The splitters. Each list box spans from its left guide to the next splitter guide, so dragging a splitter
+	//only requires redefining its guide. Scan Fields is 2 columns wide, ROI Groups and ROIs are half a column.
+	DefineGuide/W=IE ieSplit1 = {FL, 5 + colWidth}
+	DefineGuide/W=IE ieSplit2 = {FL, 10 + 2 * colWidth}
+	DefineGuide/W=IE ieSplit3 = {FL, 15 + 4 * colWidth}
+	DefineGuide/W=IE ieSplit4 = {FL, 20 + 4.5 * colWidth}
+	DefineGuide/W=IE ieRight = {FL, 25 + 5 * colWidth}
 	
-	DefineGuide/W=IE guide1 = {FL, 0.167, FR}
-	DefineGuide/W=IE guide2 = {FL, 0.33, FR}
-	DefineGuide/W=IE guide3 = {FL, 0.667, FR}
-	DefineGuide/W=IE guide4 = {FL, 0.833, FR}
+	//Left edge of each list box is a fixed gap from the splitter before it
+	DefineGuide/W=IE ieLeft1 = {FL, 5}
+	DefineGuide/W=IE ieLeft2 = {ieSplit1, 5}
+	DefineGuide/W=IE ieLeft3 = {ieSplit2, 5}
+	DefineGuide/W=IE ieLeft4 = {ieSplit3, 5}
+	DefineGuide/W=IE ieLeft5 = {ieSplit4, 5}
 	
-	SetDrawEnv/W=IE fname=$IE_LIGHT_FONT,fsize=12,xcoord=abs,ycoord=abs, textxjust=1
-	DrawText/W=IE leftPos + 0.5 * colWidth, 39,"Experiment"
-	ListBox scanFolders win=IE,pos={leftPos,40},size={colWidth, 110},title="",listWave=ScanFolderListWave,selWave=ScanFolderSelWave,mode=2,proc=IE_ListBoxProc,disable=0; 
-	resizeListBoxPositions[0] = leftPos - 3 // Experiment
-	leftPos += colWidth + 5
+	DefineGuide/W=IE ieLabelLeft2 = {ieLeft2, 5}
+	DefineGuide/W=IE ieLabelLeft3 = {ieLeft3, 5}
+	DefineGuide/W=IE ieCenter1 = {ieLeft1, 0.5, ieSplit1}
 	
-	CheckBox selectAllScanGroups win=IE,pos={leftPos + 5,23},font=$IE_LIGHT_FONT,fsize=12,size={20,20},title="Scan Groups",value=0,proc=IE_CheckBoxProc,disable=0
-	ListBox scanGroups win=IE,pos={leftPos,40},size={colWidth, 110},title="",listWave=ScanGroupListWave,selWave=ScanGroupSelWave,mode=9,proc=IE_ListBoxProc,disable=0
-	resizeListBoxPositions[1] = leftPos - 3 // Scan Groups
-	leftPos += colWidth + 5
+	DefineGuide/W=IE ieTop = {FT, 40}
+	DefineGuide/W=IE ieBottom = {FB, -5}
+	DefineGuide/W=IE ieBottomShort = {FB, -24} // leaves room for the controls under the right-hand list boxes
+	DefineGuide/W=IE ieRowMatch = {FB, -19}
+	DefineGuide/W=IE ieRowMenu = {FB, -22}
 	
-	CheckBox selectAllScanFields win=IE,pos={leftPos + 5,23},font=$IE_LIGHT_FONT,fsize=12,size={20,20},title="Scan Fields",value=0,proc=IE_CheckBoxProc,disable=0
-	ListBox scanFields win=IE,pos={leftPos,40},size={2 * colWidth, 90},title="",listWave=ScanFieldListWave,selWave=ScanFieldSelWave,mode=9,proc=IE_ListBoxProc,disable=0
-	SetVariable scanFieldMatch win=IE,pos={leftPos,226},size={2 * colWidth,20},title=" ",value=scanFieldMatchStr,proc=IE_VarProc,disable=0
-	resizeListBoxPositions[2] = leftPos - 3 // Scan Fields
-	leftPos += 2 * colWidth + 5
+	//guides = {left, hcenter, right, top, vcenter, bottom}
+	TitleBox experimentTitle win=IE,pos={0,25},frame=0,font=$IE_LIGHT_FONT,fsize=12,title="Experiment",guides={kwNone,ieCenter1,kwNone,kwNone,kwNone,kwNone}
+	ListBox scanFolders win=IE,title="",listWave=ScanFolderListWave,selWave=ScanFolderSelWave,mode=2,proc=IE_ListBoxProc,disable=0,guides={ieLeft1,kwNone,ieSplit1,ieTop,kwNone,ieBottom}
+	
+	CheckBox selectAllScanGroups win=IE,pos={0,23},font=$IE_LIGHT_FONT,fsize=12,size={20,20},title="Scan Groups",value=0,proc=IE_CheckBoxProc,disable=0,guides={ieLabelLeft2,kwNone,kwNone,kwNone,kwNone,kwNone}
+	ListBox scanGroups win=IE,title="",listWave=ScanGroupListWave,selWave=ScanGroupSelWave,mode=9,proc=IE_ListBoxProc,disable=0,guides={ieLeft2,kwNone,ieSplit2,ieTop,kwNone,ieBottom}
+	
+	CheckBox selectAllScanFields win=IE,pos={0,23},font=$IE_LIGHT_FONT,fsize=12,size={20,20},title="Scan Fields",value=0,proc=IE_CheckBoxProc,disable=0,guides={ieLabelLeft3,kwNone,kwNone,kwNone,kwNone,kwNone}
+	ListBox scanFields win=IE,title="",listWave=ScanFieldListWave,selWave=ScanFieldSelWave,mode=9,proc=IE_ListBoxProc,disable=0,guides={ieLeft3,kwNone,ieSplit3,ieTop,kwNone,ieBottomShort}
+	SetVariable scanFieldMatch win=IE,size={2 * colWidth,20},title=" ",value=scanFieldMatchStr,proc=IE_VarProc,disable=0,guides={ieLeft3,kwNone,ieSplit3,ieRowMatch,kwNone,kwNone}
 
-	ListBox roiGroups win=IE,pos={leftPos,40},size={0.5 * colWidth, 90},title="",listWave=ROIGroupListWave,selWave=ROIGroupSelWave,mode=9,proc=IE_ListBoxProc,disable=0
-	PopupMenu functionMenu win=IE, pos={leftPos,224}, size = {100, 20}, disable=0, focusRing = 0, value = "Extract ROIs", proc=IE_PopProc
-	resizeListBoxPositions[3] = leftPos - 3 // ROI Groups
-	leftPos += 0.5 * colWidth + 5
-	Button executeFunction win=IE, pos={leftPos,224}, size={40,20}, title = "Run", disable=0, focusRing = 0, proc=IE_ButtonProc
+	ListBox roiGroups win=IE,title="",listWave=ROIGroupListWave,selWave=ROIGroupSelWave,mode=9,proc=IE_ListBoxProc,disable=0,guides={ieLeft4,kwNone,ieSplit4,ieTop,kwNone,ieBottomShort}
+	PopupMenu functionMenu win=IE, size = {100, 20}, disable=0, focusRing = 0, value = "Extract ROIs", proc=IE_PopProc,guides={ieLeft4,kwNone,kwNone,ieRowMenu,kwNone,kwNone}
+	Button executeFunction win=IE, size={40,20}, title = "Run", disable=0, focusRing = 0, proc=IE_ButtonProc,guides={kwNone,kwNone,ieRight,ieRowMenu,kwNone,kwNone}
 	
-	SetDrawEnv/W=IE fname=$IE_LIGHT_FONT,fsize=12,xcoord=abs,ycoord=abs, textxjust=1
-	DrawText/W=IE leftPos,39,"ROI Groupings"
-	ListBox rois win=IE,pos={leftPos,40},size={0.5 * colWidth, 90},title="",listWave=ROIListWave,selWave=ROISelWave,mode=9,proc=IE_ListBoxProc,disable=0
-	resizeListBoxPositions[4] = leftPos - 3 //ROIs
+	TitleBox roiGroupingsTitle win=IE,pos={0,25},frame=0,font=$IE_LIGHT_FONT,fsize=12,title="ROI Groupings",guides={kwNone,ieSplit4,kwNone,kwNone,kwNone,kwNone}
+	ListBox rois win=IE,title="",listWave=ROIListWave,selWave=ROISelWave,mode=9,proc=IE_ListBoxProc,disable=0,guides={ieLeft5,kwNone,ieRight,ieTop,kwNone,ieBottomShort}
 	
 	Button displayScanField win=IE,pos={4,1},size={60,20},title="Display", focusRing = 0, font=$IE_LIGHT_FONT,proc=IE_ButtonProc,disable=0
 	Button updateImageBrowser win=IE,pos={70,1},size={70,20},title="Refresh", focusRing = 0, font=$IE_LIGHT_FONT,proc=IE_ButtonProc,disable=0 
@@ -1696,16 +1706,19 @@ Function IE_OpenImageExplorer()
 	SetWindow IE hook(ImageBrowserMouseHook) = IE_ImageBrowserMouseHook
 End
 
+//Returns the position of a guide in the Image Browser, relative to the left edge of the panel
+Function IE_GuidePosition(guideName)
+	String guideName
+	
+	return NumberByKey("POSITION",GuideInfo("IE",guideName))
+End
+
 Function IE_ImageBrowserMouseHook(s)
 	STRUCT WMWinHookStruct &s
 	DFREF NTSI = $IE
 	
 	//Are we currently resizing a column?
 	NVAR columnDrag = NTSI:columnDrag
-	
-	//Holds the current hook positions for resizing the Image Browser
-	Wave resizeListBoxPositions = NTSI:resizeListBoxPositions
-	String ctrlNames = "scanFolders;scanGroups;scanFields;roiGroups;rois;"
 	
 	Variable hookResult = 0
 	switch(s.eventCode)
@@ -1721,120 +1734,51 @@ Function IE_ImageBrowserMouseHook(s)
 			//Resizing list box
 			If(columnDrag > 0)
 				Variable r = ScreenResolution / 72
-				GetWindow IE wsize
 				
-				Variable height = s.winRect.bottom
+				//Right and left edges of the list box being resized
+				String dragGuide = StringFromList(columnDrag - 1,IE_SPLIT_GUIDES,";")
+				Variable rightEdge = IE_GuidePosition(dragGuide)
+				Variable leftEdge = IE_GuidePosition("ieLeft" + num2str(columnDrag))
 				
-				Variable vSize = height - 45
-				Variable vPos = height - 19
-			
-				For(i=0;i<ItemsInList(ctrlNames,";");i+=1)
-					String theCtrl = StringFromList(i,ctrlNames,";")
-					
-					//Don't resize list boxes to the left of the resized list boxt
-					If(i < columnDrag - 1)
-						continue
-					EndIf
-					
-					//resize and shift list boxes to the right
-					ControlInfo/W=IE $theCtrl
-					If(i == columnDrag - 1)
-						Variable xExpand = xPos  - V_right
-						
-						
-						//Limit to the smallest width of any column
-						//custom minimum sizes for each list box
-						switch(i)
-							case 0:
-							case 3:
-							case 4:
-								If(V_width + xExpand < 60)
-									return 0
-								EndIf
-								break
-							case 1:
-							case 2:
-								If(V_width + xExpand < 80)
-									return 0
-								EndIf
-							break
-						endswitch
-
-						
-						If(i > 1)
-							ListBox $theCtrl win=IE,size={V_width + xExpand,vSize-19},pos = {V_left,V_top}
-							
-						Else
-							ListBox $theCtrl win=IE,size={V_width + xExpand,vSize},pos = {V_left,V_top}							
-							
-						EndIf
-						
-					Else
-						ListBox $theCtrl win=IE,pos = {V_left + xExpand,V_top}
-					EndIf
-					
-					resizeListBoxPositions[i] = V_right + xExpand
+				//Keeps the cursor over the middle of the gap between list boxes
+				Variable xExpand = xPos - 2 - rightEdge
+				
+				//Limit to the smallest width of any column
+				//custom minimum sizes for each list box
+				switch(columnDrag - 1)
+					case 0:
+					case 3:
+					case 4:
+						xExpand = max(xExpand,60 - (rightEdge - leftEdge))
+						break
+					case 1:
+					case 2:
+						xExpand = max(xExpand,80 - (rightEdge - leftEdge))
+						break
+				endswitch
+				
+				//The panel grows by the same amount, but not below its minimum width.
+				//Any width the panel can't give up goes to the last list box.
+				Variable panelExpand = max(xExpand,IE_MIN_WIDTH - (IE_GuidePosition("ieRight") + 5))
+				
+				//Move the dragged splitter and the splitters to its right. The list boxes follow their guides.
+				For(i=columnDrag - 1;i<4;i+=1)
+					dragGuide = StringFromList(i,IE_SPLIT_GUIDES,";")
+					DefineGuide/W=IE $dragGuide = {FL,IE_GuidePosition(dragGuide) + xExpand}
 				EndFor
+				DefineGuide/W=IE ieRight = {FL,IE_GuidePosition("ieRight") + panelExpand}
 				
-				//Shift checkboxes and text
-				DrawAction/W=IE delete
-				
-				If(columnDrag < 2)
-
-					ControlInfo/W=IE selectAllScanGroups
-					CheckBox selectAllScanGroups win=IE,pos = {V_left + xExpand,V_top}
-									
-					ControlInfo/W=IE selectAllScanFields
-					CheckBox selectAllScanFields win=IE,pos = {V_left + xExpand,V_top}
-					
-					ControlInfo/W=IE scanfieldMatch
-					SetVariable scanfieldMatch win=IE,pos = {V_left + xExpand,V_top}
-					
-					ControlInfo/W=IE functionMenu
-					PopUpMenu functionMenu win=IE,pos = {V_left + xExpand,V_top}
-					
-					ControlInfo/W=IE executeFunction
-					Button executeFunction win=IE, pos = {V_left + xExpand,V_top}
-
-				ElseIf(columnDrag < 3)
-					ControlInfo/W=IE selectAllScanFields
-					CheckBox selectAllScanFields win=IE,pos = {V_left + xExpand,V_top}
-
-					ControlInfo/W=IE scanfieldMatch
-					SetVariable scanfieldMatch win=IE,pos = {V_left + xExpand,V_top}
-					
-					ControlInfo/W=IE functionMenu
-					PopUpMenu functionMenu win=IE,pos = {V_left + xExpand,V_top}
-					
-					Button executeFunction win=IE, pos = {V_right + 2 + xExpand,V_top}
-				EndIf				
-				
-								
-				//Set the drawn text labels
-				SetDrawEnv/W=IE fname=$IE_LIGHT_FONT,fsize=12,xcoord=abs,ycoord=abs
-				DrawText/W=IE 34,39,"Experiment"
-				
-				ControlInfo/W=IE roiGroups
-				SetDrawEnv/W=IE fname=$IE_LIGHT_FONT,fsize=12,xcoord=abs,ycoord=abs
-				DrawText/W=IE V_right - 37,39,"ROI Groupings"
-				
-				ControlInfo/W=IE scanFieldMatch
-
 				//Resize the panel as well
 				GetWindow IE wsize
-				height = s.winRect.bottom
-				Variable top = V_top
-				Variable left = V_left
-				Variable right = V_right
-				
-				MoveWindow/W=IE left,top,right + xExpand/r,top + height/r
+				MoveWindow/W=IE V_left,V_top,V_right + panelExpand/r,V_bottom
 			Else
 				//Hovering
 				ControlInfo/W=IE scanFolders
 				Variable topPos = V_top
 				
 				For(i=0;i<5;i+=1)
-					If(yPos > topPos && xPos > resizeListBoxPositions[i] && xPos < resizeListBoxPositions[i] + 5)
+					Variable splitPos = IE_GuidePosition(StringFromList(i,IE_SPLIT_GUIDES,";"))
+					If(yPos > topPos && xPos > splitPos && xPos < splitPos + 5)
 						//Change the cursor to the left right drag icon
 						s.doSetCursor = 1
 						s.cursorCode = 5
@@ -1847,7 +1791,8 @@ Function IE_ImageBrowserMouseHook(s)
 		case 3: //mouse down
 			xPos = s.mouseLoc.h
 			For(i=0;i<5;i+=1)
-				If(xPos > resizeListBoxPositions[i] && xPos < resizeListBoxPositions[i] + 5)
+				splitPos = IE_GuidePosition(StringFromList(i,IE_SPLIT_GUIDES,";"))
+				If(xPos > splitPos && xPos < splitPos + 5)
 					//which resize column was clicked?
 					columnDrag = i + 1
 				EndIf
@@ -5017,8 +4962,7 @@ End
 Function IE_ResizeHook(s)
 	STRUCT WMWinHookStruct &s
 	DFREF NTSI = $IE
-	Wave resizeListBoxPositions = NTSI:resizeListBoxPositions
-		
+	
 	//Are we currently resizing a column?
 	NVAR columnDrag = NTSI:columnDrag
 
@@ -5031,79 +4975,30 @@ Function IE_ResizeHook(s)
 		case 6: //Resize
 			Variable r = ScreenResolution / 72
 			
-			//prevents horizontal resize, allows vertical resize. 575 is the set width of the panel
 			GetWindow IE wsize
 			
-			Variable height = s.winRect.bottom
-			height = (height < 125) ? 125 : height
+			Variable height = max(s.winRect.bottom,IE_MIN_HEIGHT)
+			Variable width = max(s.winRect.right,IE_MIN_WIDTH)
 			
-			Variable width = s.winRect.right
-			width = (width < 575) ? 575 : width
-			
-			If(width == 575 && columnDrag)
-				break
+			If(height != s.winRect.bottom || width != s.winRect.right)
+				MoveWindow/W=IE V_left,V_top,V_left + width/r,V_top + height/r
 			EndIf
 			
-			//MoveWindow/W=SI V_left,V_top,V_left + 460/r,V_top + height/r
-			MoveWindow/W=IE V_left,V_top,V_left + width/r,V_top + height/r
+			//How much wider the panel is than the list boxes
+			Variable xExpand = width - (IE_GuidePosition("ieRight") + 5)
 			
-			Variable vSize = height - 45
-			Variable vPos = height - 19
+			//This distance is evenly divided by the 5 list boxes. Dragging a splitter already positions the guides.
+			Variable controlExpand = columnDrag ? 0 : trunc(xExpand / 5)
 			
-			//Get the right edge of the ROI box to know how much width we need to expand to
-			ControlInfo/W=IE rois
-			Variable xExpand = width - (V_right + 5)
+			//Shift each splitter by the width gained by the list boxes to its left
+			Variable i
+			For(i=1;i<5;i+=1)
+				String splitGuide = StringFromList(i - 1,IE_SPLIT_GUIDES,";")
+				DefineGuide/W=IE $splitGuide = {FL,IE_GuidePosition(splitGuide) + i * controlExpand}
+			EndFor
 			
-			//This distance is evenly divided by the 5 list boxes
-			Variable controlExpand = floor(xExpand / 5)
-
-			//Remainder Gets assigned to the Scan Fields list box
-			Variable remainder = mod(controlExpand,5)
-			
-			//Set the vertical size of the list boxes
-			ControlInfo/W=IE scanFolders
-			resizeListBoxPositions[0] = V_right + controlExpand
-			ListBox scanFolders win=IE,size={V_width + controlExpand,vSize},pos = {5,V_top}
-			
-			ControlInfo/W=IE scanGroups
-			resizeListBoxPositions[1] = V_right + controlExpand
-			ListBox scanGroups win=IE,size={V_width + controlExpand,vSize},pos = {V_left + controlExpand,V_top}
-			
-			ControlInfo/W=IE scanFields
-			resizeListBoxPositions[2] = V_right + controlExpand
-			ListBox scanFields win=IE,size={V_width + controlExpand,vSize-19},pos = {V_left + 2 * controlExpand,V_top}
-			
-			ControlInfo/W=IE roiGroups
-			resizeListBoxPositions[3] = V_right + controlExpand
-			ListBox roiGroups win=IE,size={V_width + controlExpand,vSize-19},pos = {V_left + 3 * controlExpand,V_top}
-				
-			ControlInfo/W=IE rois
-			resizeListBoxPositions[4] = V_right + controlExpand + remainder
-			ListBox rois win=IE,size={V_width + controlExpand + remainder,vSize-19},pos = {V_left + 4 * controlExpand,V_top}
-			
-			ControlInfo/W=IE scanFieldMatch
-			SetVariable scanFieldMatch win=IE,pos={V_left + 2 * controlExpand,vPos},size = {V_width + controlExpand,20}
-			
-			ControlInfo/W=IE functionMenu
-			PopupMenu functionMenu win=IE, pos={V_left + 3 * controlExpand, vPos - 3}
-			Button executeFunction win=IE, pos={V_Right + 2 + 3 * controlExpand, vPos - 3}
-
-			//Shift the checkboxes
-			ControlInfo/W=IE selectAllScanGroups
-			CheckBox selectAllScanGroups win=IE,pos = {V_left + controlExpand,V_top}
-							
-			ControlInfo/W=IE selectAllScanFields
-			CheckBox selectAllScanFields win=IE,pos = {V_left + controlExpand * 2,V_top}
-
-			//Set the drawn text labels
-			DrawAction/W=IE delete
-			
-			SetDrawEnv/W=IE fname=$IE_LIGHT_FONT,fsize=12,xcoord=abs,ycoord=abs
-			DrawText/W=IE 34,39,"Experiment"
-			
-			ControlInfo/W=IE roiGroups
-			SetDrawEnv/W=IE fname=$IE_LIGHT_FONT,fsize=12,xcoord=abs,ycoord=abs
-			DrawText/W=IE V_right - 37,39,"ROI Groupings"
+			//The last list box gets the remainder
+			DefineGuide/W=IE ieRight = {FL,width - 5}
 			
 			break
 	endswitch
